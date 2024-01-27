@@ -14,10 +14,10 @@ def is_valid_network(graph: nx.DiGraph):
 
 def generate_uniform_weight_directed_acyclic():
     # correct ordering: [{1}, {2, 3}, {4, 5, 6}]
-    G = nx.Graph()
+    G = nx.DiGraph()
     G.add_edge(1, 2, weight=1)
     G.add_edge(1, 3, weight=1)
     G.add_edge(2, 4, weight=1)
     G.add_edge(2, 5, weight=1)
-    G.add_edge(2, 5, weight=1)
+    G.add_edge(2, 6, weight=1)
     return G, [{1}, {2, 3}, {4, 5, 6}]

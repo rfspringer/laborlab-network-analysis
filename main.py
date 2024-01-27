@@ -1,19 +1,43 @@
 import networkx as nx
 import utils
+import matplotlib
 
 
 def sort(graph: nx.DiGraph):
-    assert utils.is_valid_network(graph)
+    g = graph.copy()    # dont want to directly modify graph
+    assert utils.is_valid_network(g)
+    sorted = []
+    while g.number_of_nodes() > 0:
+        nodes = get_nodes_with_indegree_zero(g)
+        sorted.append(nodes)
+        g.remove_nodes_from(nodes)
+    return sorted
+
+
+def get_nodes_with_indegree_zero(graph: nx.DiGraph):
+    node_set = set()
+    for node, in_degree in graph.in_degree:
+        if in_degree == 0:
+            node_set.add(node)
+    return node_set
+
 
 def test_sort():
     graph, order = utils.generate_uniform_weight_directed_acyclic()
-    unweighted_acyclic = graph
-    assert sort(graph) == order
+    test_graph(graph, order)
+
+
+def test_graph(graph, order: [set]):
+    sorted = sort(graph)
+    print(graph)
+    print("sorted: ", sorted)
+    assert sort(graph) == order, "Should be " + order
+
 
 if __name__ == "__main__":
     test_sort()
 
-    
+
 # TODO:
 # take in network x graph
 
