@@ -21,3 +21,22 @@ def generate_uniform_weight_directed_acyclic():
     G.add_edge(2, 5, weight=1)
     G.add_edge(2, 6, weight=1)
     return G, [{1}, {2, 3}, {4, 5, 6}]
+
+
+# Function to check linear independence of cycles
+def is_linearly_independent(cycle, basis):
+    for basis_cycle in basis:
+        if set(cycle).intersection(set(basis_cycle)):
+            return False
+    return True
+
+
+def get_basis(graph):
+    all_cycles = list(nx.simple_cycles(graph))
+    cycle_basis = []
+    for cycle in all_cycles:
+        if is_linearly_independent(cycle, cycle_basis):
+            cycle_basis.append(cycle)
+    return cycle_basis
+
+
