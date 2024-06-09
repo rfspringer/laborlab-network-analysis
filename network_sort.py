@@ -119,6 +119,12 @@ def sort(g: nx.DiGraph) -> [set]:
     :return: ordered list of sets of nodes
     """
     assert utils.is_valid_network(g)
+
+    # if given graph is not weighted, add an equal weight to every edge
+    if not nx.is_weighted(g):
+        for u, v in g.edges():
+            g[u][v]['weight'] = 1
+
     node_id_counter = (
         max(g.nodes()) + 1
     )  # node id counter to keep track of what id to give new nodes
@@ -145,13 +151,9 @@ def sort(g: nx.DiGraph) -> [set]:
 
 
 def test_sort():
-    test_cases = [
-        utils.generate_weight_directed_cyclic(),
-        utils.generate_uniform_weight_directed_acyclic(),
-    ]
-
-    for test in test_cases:
-        test_graph(*test)
+    for test in utils.test_cases:
+        graph, order = test()
+        test_graph(graph, order)
 
 
 def test_graph(graph: nx.DiGraph, order: [set]):
@@ -164,7 +166,3 @@ def test_graph(graph: nx.DiGraph, order: [set]):
 
 if __name__ == "__main__":
     test_sort()
-
-# add function to automatically add equal weights?
-# make something to run all tests
-# funciton to add separate domination network?
