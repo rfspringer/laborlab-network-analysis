@@ -2,127 +2,169 @@ import networkx as nx
 import utils
 
 
-class NetworkSort:
-    node_id_counter = 0
-    graph = None
-
-    def __init__(self, g: nx.DiGraph):
-        self.graph = g.copy()
-        assert utils.is_valid_network(self.graph)
-        self.node_id_counter = max(self.graph.nodes()) + 1
-
-
-    def sort(self):
-        g = self.graph.copy()    # dont want to directly modify graph
-        sorted = []
-
-        g_sccs = self.collapse_SCCS(g)
-
-        #sort strongly connected components by indegree
-        sorted_sccs = self.sort_by_indegree(g_sccs)
-
-        for i in range(len(sorted_sccs)):
-            # sorted_sccs returns list of sets
-            supernode_id_set = sorted_sccs[i]
-            combined_subgraph = nx.DiGraph()
-
-            # combined if supernodes are tied
-            for id in supernode_id_set:
-                combined_subgraph = nx.compose(combined_subgraph, g_sccs.nodes[id]['subnode'])
-
-            sorted_subnodes = self.sort_by_net_flow(combined_subgraph)
-            sorted = sorted + sorted_subnodes
-        return sorted
+def _calculate_net_flow(graph: nx.DiGraph, node) -> float:
+    """
+    Calculate the net flow (weight of edges out - edges in) for the given node in the graph
+    :param graph: graph or subgraph to calculate net flow in
+    :param node: node to calculate
+    :return: net flow for node in the graph
+    """
+    incoming_sum = sum(graph[u][node]["weight"] for u in graph.predecessors(node))
+    outgoing_sum = sum(graph[node][v]["weight"] for v in graph.successors(node))
+    return outgoing_sum - incoming_sum
 
 
-    def calculate_net_flow(self, graph: nx.DiGraph, node):
-        incoming_sum = sum(graph[u][node]['weight'] for u in graph.predecessors(node))  # note: this includes edges from outside the cycle
-        outgoing_sum = sum(graph[node][v]['weight'] for v in graph.successors(node))
-        return  outgoing_sum - incoming_sum
+def _sort_by_indegree(graph: nx.DiGraph) -> [set]:
+    """
+    Sorts an acyclic graph by indegree, with ties broken by net flow
+    :param graph: Directed acyclic graph
+    :return: list of sets of nodes, ordered first by topological order then by net flow
+    """
+    assert nx.is_directed_acyclic_graph(graph)  # all supernodes should be collapsed
+
+    # dictionary of topological level and net flow as key and set of all nodes with those values
+    # stored this way in case of ties
+    sorting_keys = {}
+
+    for node in graph.nodes():
+        topological_level = len(nx.ancestors(graph, node))
+        net_flow = _calculate_net_flow(graph, node)
+        sorting_key = (
+            topological_level,
+            -net_flow,  # negate net flow to sort in descending order
+        )
+        if sorting_key not in sorting_keys:
+            sorting_keys[sorting_key] = set()
+        sorting_keys[sorting_key].add(node)
+
+    # list of sets of nodes, sorted first by topological level, then by net flow
+    sorted_nodes = [value for key, value in sorted(sorting_keys.items())]
+
+    return sorted_nodes
 
 
-    def sort_by_indegree(self, graph: nx.DiGraph):
-        g = graph.copy()    # dont want to directly modify graph
-        assert nx.is_directed_acyclic_graph(g) # all supernodes should be collapsed
-
-        # dictionary to map sorting keys to nodes
-        # key is first by indegree, tiebreak with net flow
-        # returns sets in case of tie
-        sorting_keys = {}
-
-        for node in g.nodes():
-            topological_level = len(nx.ancestors(g, node))
-            net_flow = self.calculate_net_flow(graph, node)    #TODO: should be static fn or in utils (same as topolgical order on)
-            sorting_key = (topological_level, -net_flow)  # negate net flow to sort in descending order
-            if sorting_key not in sorting_keys:
-                sorting_keys[sorting_key] = set()  # initialize an empty set for the sorting key
-            sorting_keys[sorting_key].add(node)  # add the node to the set
-
-        # Sort nodes by indegree, tiebreak with net flow and net flow
-        sorted_nodes = [value for key, value in sorted(sorting_keys.items())]
-
-        return sorted_nodes
-        # TODO: make sure to break ties w net flow
+def _sort_by_net_flow(graph: nx.DiGraph):
+    """
+    Sort nodes in the provided graph by netf low
+    :param graph: weighted directed graph
+    :return:  list of nodes, sorted by net flow (weight out - weight in)
+    """
+    net_flows = {}
+    for node in graph.nodes():
+        net_flow = _calculate_net_flow(graph, node)
+        if net_flow not in net_flows:
+            net_flows[net_flow] = set()  # stored in sets to allow for ties
+        net_flows[net_flow].add(node)
+    sorted_nodes = [net_flows[key] for key in sorted(net_flows.keys(), reverse=True)]
+    return sorted_nodes
 
 
-    def sort_by_net_flow(self, graph):  # TODO: should do this for all in same set, not just same SCC I think (in case two are at same position ex a-> b and a-> c, b and c are kind of tied
-        net_flows = {}
-        for node in graph.nodes():
-            net_flow = self.calculate_net_flow(graph, node)
-            if net_flow not in net_flows:
-                net_flows[net_flow] = set()
-            net_flows[net_flow].add(node)
-        sorted_nodes = [net_flows[key] for key in sorted(net_flows.keys(), reverse=True)]
-        return sorted_nodes
+def _collapse_SCCS(g: nx.DiGraph, node_id_counter: int) -> (nx.DiGraph, int):
+    """
+    Collapses strongly connected components of a graph to supernodes
+    :param g: Graph to collapse
+    :param node_id_counter: local counter variable to keep track of node ids
+    :return: Collapsed representation of graph, counter for node ids
+    """
+    sccs = list(nx.strongly_connected_components(g))
+
+    for component in sccs:
+        node_id_counter = _create_supernode(component, g, node_id_counter)
+
+    self_loops = [(u, v) for u, v in g.edges() if u == v]
+    g.remove_edges_from(self_loops)
+    return g, node_id_counter
 
 
-    def collapse_SCCS(self, g):
-        sccs = list(nx.strongly_connected_components(g))
+def _create_supernode(component: set, graph: nx.DiGraph, node_id_counter: int) -> int:
+    """
+    Collapses indicated component of graph into a supernode, maintaining edges in/ out
+    :param component: set of nodes to collapse into supernode
+    :param graph: graph to modify
+    :param node_id_counter: local counter variable to keep track of node ids
+    :return: updated node id counter
+    """
+    supernode_id = node_id_counter
+    node_id_counter += 1
 
-        for component in sccs:
-            self.create_supernode(component, g)
+    # make subgraph of the indicated component and store in the subnode field of the supernode
+    subgraph = graph.subgraph(component).copy()
+    graph.add_node(
+        supernode_id, subnode=subgraph
+    )  # subnode stored the collapsed component
 
-        self_loops = [(u, v) for u, v in g.edges() if u == v]
-        g.remove_edges_from(self_loops)
-        return g
+    for node in component:
+        # maintain predecessors for collapsed nodes in supernode
+        for predecessor in graph.predecessors(node):
+            weight = graph[predecessor][node]["weight"]
+            graph.add_edge(
+                predecessor, supernode_id, weight=weight
+            )  # note: adding to existing edges will cumulatively add weight
+
+        # maintain successors for collapsed nodes in supernode
+        for successor in graph.successors(node):
+            weight = graph[node][successor]["weight"]
+            graph.add_edge(supernode_id, successor, weight=weight)
+
+        graph.remove_node(node)
+    return node_id_counter
 
 
-    def create_supernode(self, component, graph):
-        supernode_id = self.node_id_counter
-        self.node_id_counter += 1
+def sort(g: nx.DiGraph) -> [set]:
+    """
+    Sort directed graph by collapsing strongly connected components (SCCs) into supernodes,
+    sorting supernodes by topological order and net flow,
+    and then sorting collapsed components internally by net flow
+    :param g: directed graph to sort
+    :return: ordered list of sets of nodes
+    """
+    assert utils.is_valid_network(g)
+    node_id_counter = (
+        max(g.nodes()) + 1
+    )  # node id counter to keep track of what id to give new nodes
 
-        subgraph = self.graph.subgraph(component)   #use self here to make sure subcomponent retains the whole graph, despite changes
-        graph.add_node(supernode_id, subnode= subgraph)
+    sorted_list = []
 
-        for node in component:
-            # aggregate edges for each node subcomponent
-            for predecessor in graph.predecessors(node):
-                weight = graph[predecessor][node]['weight']
-                graph.add_edge(predecessor, supernode_id, weight=weight)
+    # collapse graph into strongly connected components and sort supernodes
+    g_sccs, node_id_counter = _collapse_SCCS(g.copy(), node_id_counter)
+    sorted_sccs = _sort_by_indegree(g_sccs)
 
-            for successor in graph.successors(node):
-                weight = graph[node][successor]['weight']
-                graph.add_edge(supernode_id, successor, weight=weight)
+    # sort nodes within each strongly connected component internally, and place into ordered list
+    for supernode_id_set in sorted_sccs:
+        combined_subgraph = nx.DiGraph()
 
-            graph.remove_node(node)
+        for id in supernode_id_set:
+            combined_subgraph = nx.compose(
+                combined_subgraph, g_sccs.nodes[id]["subnode"]
+            )
+
+        sorted_subnodes = _sort_by_net_flow(combined_subgraph)
+        sorted_list.extend(sorted_subnodes)
+
+    return sorted_list
 
 
 def test_sort():
-    graph, order = utils.generate_weight_directed_cyclic()
-    ns = NetworkSort(graph)
-    test_graph(ns, order)
+    test_cases = [
+        utils.generate_weight_directed_cyclic(),
+        utils.generate_uniform_weight_directed_acyclic(),
+    ]
+
+    for test in test_cases:
+        test_graph(*test)
 
 
-def test_graph(ns: NetworkSort, order: [set]):
-    sorted = ns.sort(ns.graph)
-    print(ns.graph)
+def test_graph(graph: nx.DiGraph, order: [set]):
+    sorted = sort(graph)
+    print(nx.graph)
     print("sorted: ", sorted)
     assert sorted == order, "Should be " + order
+    print("passed :)\n")
 
 
 if __name__ == "__main__":
     test_sort()
 
-
-
-
+# add function to automatically add equal weights?
+# make something to run all tests
+# funciton to add separate domination network?

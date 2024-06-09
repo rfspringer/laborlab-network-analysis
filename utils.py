@@ -33,6 +33,7 @@ def generate_weight_directed_cyclic():
     G.add_edge(2, 4, weight=15)
     return G, [{1}, {3}, {2}, {4}]
 
+
 # Function to check linear independence of cycles
 def is_linearly_independent(cycle, basis):
     for basis_cycle in basis:
@@ -55,7 +56,8 @@ def get_list_of_set_permutations(list_of_sets):
     product_permutations = product(*set_permutations)
 
     # Combine permutations and preserve the order of the sets
-    result = [[item for sublist in perm for item in sublist] for perm in product_permutations]
+    result = [
+        [item for sublist in perm for item in sublist] for perm in product_permutations
+    ]
 
     return result
-
