@@ -196,7 +196,7 @@ def run_simulations_partially_connected_no_noise():
     # Create a DataFrame from the results
     df_results = pd.DataFrame(results, columns=["num_nodes", "p", "rank_correl"])
     df_results.to_csv(
-        "simulation_results_partially_connected_no_noise.csv", index=False
+        "results/simulation_results_partially_connected_no_noise.csv", index=False
     )
 
 
@@ -225,7 +225,7 @@ def run_simulations_all_edges_with_noise():
 
     # Create a DataFrame from the results
     df_results = pd.DataFrame(results, columns=["num_nodes", "rank_correl"])
-    df_results.to_csv("simulation_results_fully_connected_noise.csv", index=False)
+    df_results.to_csv("results/simulation_results_fully_connected_noise.csv", index=False)
 
 
 run_simulations_all_edges_with_noise()
