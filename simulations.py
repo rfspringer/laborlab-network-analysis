@@ -6,6 +6,7 @@ import network_sort
 import utils
 from scipy.stats import spearmanr
 import pandas as pd
+from graph_analysis import *
 
 
 class Simulation:
@@ -63,6 +64,9 @@ class Simulation:
         :param wealth_to_income_fn: function for converting wealth to income
         :return: Dictionary of node ids to income
         """
+        dict = {
+            id: wealth_to_income_fn(wealth) for id, wealth in self.id_to_wealth.items()
+        }
         return {
             id: wealth_to_income_fn(wealth) for id, wealth in self.id_to_wealth.items()
         }
@@ -91,6 +95,8 @@ class Simulation:
         # make an empty graph
         G = nx.DiGraph()
         G.add_nodes_from(range(num_nodes))
+        nx.set_node_attributes(G, self.id_to_wealth, 'wealth')
+        nx.set_node_attributes(G, self.id_to_income, 'income')
 
         for pair in pairs:
             # choose whether or not nodes should be connected with probability prob_connection
@@ -166,7 +172,7 @@ class Simulation:
 
 def run_simulations_partially_connected_no_noise():
     num_nodes_values = [10, 50, 100, 500, 1000]
-    prob_connected_values = [0.2, 0.35, 0.5, 0.75]
+    prob_connected_values = [0.2, 0.35, 0.5, 0.65, 0.8]
 
     param_combinations = [
         (p1, p2) for p1 in num_nodes_values for p2 in prob_connected_values
@@ -217,19 +223,72 @@ def run_simulations_all_edges_with_noise():
             simulation = Simulation(
                 n,
                 prob_connection=1,
-                wealth_to_income_fn=lambda x: 0.2 * x + np.random.normal(scale=10000),
+                wealth_to_income_fn=lambda x: 0.2 * x + np.random.normal(scale=50000),
             )
-            result = simulation.rank_correlation
-            results.append((n, result))
+            rho = simulation.rank_correlation
+            wealth_gini = wealth_gini_all_nodes(simulation.G)
+            directly_connected_gini = wealth_gini_directly_connected_only(simulation.G)
+            not_connected_gini = wealth_gini_not_directly_connected(simulation.G)
+            income_wealth_match_gini, income_wealth_no_match_gini = wealth_gini_directly_connected_split_by_income(simulation.G)
+            results.append((n, rho, wealth_gini, directly_connected_gini, not_connected_gini, income_wealth_match_gini, income_wealth_no_match_gini))
             i += 1
 
     # Create a DataFrame from the results
-    df_results = pd.DataFrame(results, columns=["num_nodes", "rank_correl"])
-    df_results.to_csv("results/simulation_results_fully_connected_noise.csv", index=False)
+    df_results = pd.DataFrame(results, columns=["num_nodes", "rank correl", "wealth gini", "gini- directly connected",
+                                                "gini-not connected", "gini- income-wealth match", "gini- no income wealth match"])
+    df_results.to_csv("results/simulation_results_fully_connected_higher_noise.csv", index=False)
+
+
+
+def run_simulations_partially_connected_no_noise():
+    num_nodes_values = [10, 50, 100, 500, 1000]
+    prob_connected_values = [0.2, 0.35, 0.5, 0.65, 0.8]
+    noise_scale = [0, 0.05, 0.1, 0.25, 0.5]
+
+    param_combinations = [
+        (p1, p2, p3 ) for p1 in num_nodes_values for p2 in prob_connected_values for p3 in noise_scale
+    ]
+
+    # Run the function with each set of parameters and collect results
+    results = []
+    i = 1
+    sims_per_combination = 10
+    for num_nodes, prob_connected, noise_scale in param_combinations:
+        for j in range(sims_per_combination):
+            update_str = (
+                str(i)
+                + "/"
+                + str(
+                    len(num_nodes_values)
+                    * len(prob_connected_values)
+                    * len(noise_scale)
+                    * sims_per_combination
+                )
+            )
+            print(update_str)
+            simulation = Simulation(num_nodes=num_nodes, prob_connection=prob_connected, wealth_dist=None, wealth_to_income_fn=lambda x: x * 0.2 + np.random.normal(scale= 0.2 * x * scale_scale))
+            rho = simulation.rank_correlation
+            wealth_gini = wealth_gini_all_nodes(simulation.G)
+            directly_connected_gini = wealth_gini_directly_connected_only(simulation.G)
+            not_connected_gini = wealth_gini_not_directly_connected(simulation.G)
+            income_wealth_match_gini, income_wealth_no_match_gini = wealth_gini_directly_connected_split_by_income(
+                simulation.G)
+            results.append((num_nodes, prob_connected, noise_scale, rho, wealth_gini, directly_connected_gini, not_connected_gini, income_wealth_match_gini,
+                            income_wealth_no_match_gini))
+            i += 1
+
+    # MAKE GINI TESTS BEFORE RUNNING THIS
+    df_results = pd.DataFrame(results, columns=["num_nodes", "p", "noise_scale", "rank_correl", "wealth gini", "gini- directly connected",
+                                                "gini-not connected", "gini- income-wealth match", "gini- no income wealth match"])
+    df_results.to_csv(
+        "results/simulation_results_partially_connected_no_noise.csv", index=False
+    )
 
 
 run_simulations_all_edges_with_noise()
-run_simulations_partially_connected_no_noise()
+#run_simulations_partially_connected_no_noise()
+
+
 
 # Code for running one simualtion, checking outputs
 # sim = Simulation(num_nodes=10, wealth_to_income_fn= lambda x: 0.2 * x + np.random.normal(scale=10000))

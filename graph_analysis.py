@@ -75,7 +75,7 @@ def wealth_gini_weakly_unconnected_only(g: nx.DiGraph) -> float:
     total_difference = 0
     pair_count = 0
 
-    connected_components = nx.weakly_connected_components(g)
+    connected_components = list(nx.weakly_connected_components(g))
     for i, component_1 in enumerate(connected_components):
         for component_2 in connected_components[i + 1:]:
             for node_1 in component_1:
@@ -126,8 +126,9 @@ def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph) -> (float, flo
         diff = abs(wealth_1 - wealth_2)
 
         # or do this by direction of arrow?
-        higher_wealth_node = node_1 if g.nodes[node_1].get('income') > g.nodes[node_1].get('income') else node_2
-        higher_income_node = node_1 if g.nodes[node_1].get('wealth') > g.nodes[node_1].get('wealth') else node_2
+        higher_wealth_node = node_1 if g.nodes[node_1].get('wealth') >= g.nodes[node_2].get('wealth') else node_2
+        lower_wealth_node = node_2 if higher_wealth_node is node_1 else node_1  # extra logic standardizes lower/ higher (not just based on node1 vs node2 when equal)
+        higher_income_node = higher_wealth_node if g.nodes[higher_wealth_node].get('income') >= g.nodes[lower_wealth_node].get('income') else lower_wealth_node
         if higher_wealth_node is higher_income_node:
             wealthier_higher_income_diffs += diff
             wealthier_higher_income_pairs += 1
@@ -135,8 +136,8 @@ def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph) -> (float, flo
             wealthier_lower_income_diffs += diff
             wealthier_lower_income_pairs += 1
 
-    higher_income_gini = wealthier_higher_income_diffs/wealthier_higher_income_pairs if wealthier_higher_income_pairs is not 0 else None
-    lower_income_gini = wealthier_lower_income_diffs / wealthier_lower_income_pairs if wealthier_lower_income_pairs is not 0 else None
+    higher_income_gini = wealthier_higher_income_diffs/wealthier_higher_income_pairs if wealthier_higher_income_pairs != 0 else None
+    lower_income_gini = wealthier_lower_income_diffs / wealthier_lower_income_pairs if wealthier_lower_income_pairs != 0 else None
     return higher_income_gini, lower_income_gini
 
 

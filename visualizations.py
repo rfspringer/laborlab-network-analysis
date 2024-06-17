@@ -52,6 +52,17 @@ def bargraphs():
     plt.grid(axis="y")
     plt.show()
 
+def correlation_heatmap():
+    df = pd.read_csv('results/simulation_results_fully_connected_higher_noise.csv')
 
-bargraphs()
-heatmap()
+    # Step 2: Compute the correlation matrix
+    corr_matrix = df.corr()
+
+    # Step 3: Create the heatmap
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+    plt.show()
+
+correlation_heatmap()
+# bargraphs()
+# heatmap()
