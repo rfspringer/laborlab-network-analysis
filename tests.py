@@ -1,5 +1,8 @@
 import pytest
 import networkx as nx
+import utils
+
+import network_sort
 from graph_analysis import *
 
 @pytest.fixture
@@ -30,20 +33,24 @@ def test_wealth_gini_directly_connected_only(simple_test_graph):
     connected_gini = wealth_gini_directly_connected_only(simple_test_graph)
     assert round(connected_gini, 2) == expected_connected_gini
 
+
 def test_wealth_gini_not_directly_connected (simple_test_graph):
     expected_connected_gini = 4.2  # Calculated manually
     connected_gini = wealth_gini_not_directly_connected(simple_test_graph)
     assert round(connected_gini, 2) == expected_connected_gini
+
 
 def test_wealth_gini_weakly_connected(simple_test_graph):
     expected_connected_gini = 4.14  # Calculated manually
     connected_gini = wealth_gini_weakly_connected_only(simple_test_graph)
     assert round(connected_gini, 2) == expected_connected_gini
 
+
 def test_wealth_gini_not_weakly_connected(simple_test_graph):
     expected_unconnected_gini = 4.0  # Calculated manually
     unconnected_gini = wealth_gini_weakly_unconnected_only(simple_test_graph)
     assert round(unconnected_gini, 2) == expected_unconnected_gini
+
 
 def test_wealth_gini_directly_connected_split_by_income(simple_test_graph):
     expected_higher_income_gini = 4.5  # Calculated manually
@@ -53,3 +60,20 @@ def test_wealth_gini_directly_connected_split_by_income(simple_test_graph):
 
     assert round(higher_income_gini, 2) == expected_higher_income_gini
     assert round(lower_income_gini, 2) == expected_lower_income_gini
+
+
+def test_rank_correlation(simple_test_graph):
+    sorted_nodes = network_sort.sort(simple_test_graph)
+
+    # Sort nodes based on their 'wealth' attribute values
+    wealths = nx.get_node_attributes(simple_test_graph, 'wealth')
+    wealth_sorted_nodes = sorted(simple_test_graph.nodes(), key=lambda node: wealths[node], reverse=True)
+    ranks = {id_: rank for rank, id_ in enumerate(wealth_sorted_nodes, start=1)}
+    print(ranks)
+
+    rho, list = utils.calculate_rank_correlation(sorted_nodes, ranks)
+    print(sorted_nodes)
+    print(wealth_sorted_nodes)
+    print(list)
+    print(rho)
+

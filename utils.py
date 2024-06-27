@@ -1,5 +1,8 @@
 import networkx as nx
 from itertools import permutations, product
+from scipy.stats import spearmanr
+import numpy as np
+import scipy
 
 
 def is_valid_network(graph: nx.DiGraph):
@@ -71,3 +74,43 @@ def get_list_of_set_permutations(list_of_sets):
     ]
 
     return result
+
+def calculate_rank_correlation(sorted_nodes, ranks_by_id):
+    """
+    Calculate Spearman rank correlation between true sorted order of wealth and results from sorting algorithm.
+    :param sorted_nodes: List of nodes sorted by the algorithm.
+    :param ranks_by_id: Dictionary of node ranks by their IDs.
+    :return: Spearman rank correlation between true order and sorting algorithm results, list used to calculate result.
+    """
+
+    # All possible orderings of elements from the sorting algorithm (in case of ties, though this is infrequent unless weights are often the same)
+    all_lists = get_list_of_set_permutations(sorted_nodes)
+
+    # Checks through all possible orders within sets to get closest to correct one (since all would be valid orderings)
+    best_list = None
+    max_rank_correl = -1
+    for lst in all_lists:
+        list_ranks = [ranks_by_id[node] for node in lst]
+        true_ranks = [i + 1 for i in range(len(lst))]
+        # Calculate Spearman rank correlation
+        rho, _ = spearmanr(list_ranks, true_ranks)
+        if rho >= max_rank_correl:
+            max_rank_correl = rho
+            best_list = lst
+    return max_rank_correl, best_list
+
+
+def multivariate_pareto_dist(n_samples, mins, alpha, correlation_matrix):
+    n_vars = len(mins)
+
+    # Generate correlated uniform variables using Gaussian copula
+    L = scipy.linalg.cholesky(correlation_matrix, lower=True)
+    standard_normal_vars = np.random.normal(size=(n_samples, n_vars))
+    u = scipy.stats.norm.cdf(np.dot(standard_normal_vars, L))
+
+    # Transform to Pareto distribution
+    samples = np.zeros((n_samples, n_vars))
+    for i in range(n_vars):
+        samples[:, i] = mins[i] / ((1 - u[:, i]) ** (1 / alpha[i]))
+
+    return samples

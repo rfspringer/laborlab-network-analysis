@@ -110,6 +110,11 @@ def _create_supernode(component: set, graph: nx.DiGraph, node_id_counter: int) -
     return node_id_counter
 
 
+def get_max_node_id(g: nx.DiGraph()):
+    max_id = max((node for node in g.nodes() if isinstance(node, int)), default=0)
+    return max_id
+
+
 def sort(g: nx.DiGraph) -> [set]:
     """
     Sort directed graph by collapsing strongly connected components (SCCs) into supernodes,
@@ -125,9 +130,8 @@ def sort(g: nx.DiGraph) -> [set]:
         for u, v in g.edges():
             g[u][v]['weight'] = 1
 
-    node_id_counter = (
-        max(g.nodes()) + 1
-    )  # node id counter to keep track of what id to give new nodes
+    # node id counter to keep track of what id to give new nodes
+    node_id_counter = get_max_node_id(g) + 1
 
     sorted_list = []
 

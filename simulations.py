@@ -1,10 +1,8 @@
 import networkx as nx
 import numpy as np
-import itertools
 import matplotlib.pyplot as plt
 import network_sort
 import utils
-from scipy.stats import spearmanr
 import pandas as pd
 from graph_analysis import *
 
@@ -13,10 +11,9 @@ class Simulation:
     def __init__(
         self,
         num_nodes: int,
-        prob_connection: float = 0.5,
-        wealth_dist=None,
+        degree_dist=np.random.randint,
+        wealth_dist=lambda n : np.random.randint(low=1000, high=100000),
         wealth_to_income_fn=lambda x: x * 0.2,
-        **wealth_kwargs
     ):
         """
         Initializes a new graph simulation
@@ -27,19 +24,19 @@ class Simulation:
         :param wealth_kwargs: Args for provided wealth distribution function
         """
         self.id_to_wealth = self.make_id_to_wealth_dict(
-            num_nodes, wealth_dist, **wealth_kwargs
+            num_nodes, wealth_dist
         )
         self.id_to_income = self.make_id_to_income_dict(wealth_to_income_fn)
         self.true_sorted_ids, self.ranks_by_id = self.sort_ids_by_wealth()
-        self.G = self.make_graph(num_nodes, prob_connection)
+        degrees = self.generate_degrees(degree_dist, num_nodes)
+        self.G = self.make_graph(degrees)
         self.sorted_nodes = network_sort.sort(
             self.G
         )  # note this comes out at list of sets (in case of ties), not list of elements
-        self.rank_correlation, self.best_rank_correlation_list = (
-            self.calculate_rank_correlation()
-        )
+        self.rank_correlation, self.best_rank_correlation_list = \
+            utils.calculate_rank_correlation(self.sorted_nodes, self.ranks_by_id)
 
-    def make_id_to_wealth_dict(self, num_nodes, wealth_dist, **kwargs) -> {int: float}:
+    def make_id_to_wealth_dict(self, num_nodes, wealth_dist) -> {int: float}:
         """
         Make dictionary of node ids to wealth, generated from wealth_dist function
         :param num_nodes: Number of nodes in the simulation
@@ -50,12 +47,7 @@ class Simulation:
         """
 
         # Set default distribution function to np.random.randint with low=0 and high=100000
-        if wealth_dist is None:
-            wealth_dist = np.random.randint
-            kwargs.setdefault("low", 0)
-            kwargs.setdefault("high", 1000000)
-
-        wealths = wealth_dist(size=num_nodes, **kwargs)
+        wealths = wealth_dist(num_nodes)
         return {i: wealths[i] for i in range(num_nodes)}
 
     def make_id_to_income_dict(self, wealth_to_income_fn) -> {int: float}:
@@ -82,29 +74,32 @@ class Simulation:
         ranks = {id_: rank for rank, id_ in enumerate(sorted_ids, start=1)}
         return sorted_ids, ranks
 
-    def make_graph(self, num_nodes: int, prob_connection: float) -> nx.DiGraph:
+    def generate_degrees(self, degree_generator, num_nodes) -> [int]:
+        degrees = degree_generator(num_nodes) # make sure the generator takes things in this format!!
+
+        # Make the sum of degrees is even so it can make a valid graph
+        if sum(degrees) % 2 != 0:
+            degrees[np.random.choice(num_nodes)] += 1
+
+        return degrees
+
+    def make_graph(self, degrees: [int]) -> nx.DiGraph:
         """
         Build graph from graph parameters and incomes
         :param num_nodes: Number of nodes for graph to have
-        :param prob_connection: Probability of an edge between any two nodes
         :return: Simulated weighted directed graph of nodes, with weights/ direction of income difference
         """
-        # create list of all pairs of ids
-        pairs = list(itertools.combinations(self.id_to_income.keys(), 2))
+        # make an undirected graph from the specified degrees
+        G_undirected = nx.expected_degree_graph(degrees, selfloops=False)
+        nx.set_node_attributes(G_undirected, self.id_to_wealth, 'wealth')
+        nx.set_node_attributes(G_undirected, self.id_to_income, 'income')
 
-        # make an empty graph
+        # convert to directed graph, edges pointing from higher to lower wealth node
         G = nx.DiGraph()
-        G.add_nodes_from(range(num_nodes))
-        nx.set_node_attributes(G, self.id_to_wealth, 'wealth')
-        nx.set_node_attributes(G, self.id_to_income, 'income')
+        G.add_nodes_from(G_undirected.nodes())
 
-        for pair in pairs:
-            # choose whether or not nodes should be connected with probability prob_connection
-            connected = np.random.choice(
-                [0, 1], p=[1 - prob_connection, prob_connection]
-            )
-            if connected:
-                self.add_edge(G, pair)
+        for u, v in G_undirected.edges():
+            self.add_edge(G, (u, v))
         return G
 
     def add_edge(self, G: nx.DiGraph, node_pair: (int, int)):
@@ -147,27 +142,6 @@ class Simulation:
         )
 
         plt.show()
-
-    def calculate_rank_correlation(self) -> (float, [int]):
-        """
-        Calculate spearman rank correlation between true sorted order of wealth and results from sorting algorithm
-        :return: spearman rank correlation between true order and sorting algorithm results, list used to calculate result
-        """
-
-        # all possible orderings of elements from the sorting algorithm (in case of ties, though this is infrequent unless weights are often the same)
-        all_lists = utils.get_list_of_set_permutations(self.sorted_nodes)
-
-        # checks through all possible orders within sets to get closest to correct one (since all would be valid orderings)
-        best_list = None
-        max_rank_correl = -1
-        for list in all_lists:
-            list_ranks = [self.ranks_by_id[node] for node in list]
-            true_ranks = [self.ranks_by_id[node] for node in self.true_sorted_ids]
-            rho, p_value = spearmanr(list_ranks, true_ranks)
-            if rho > max_rank_correl:
-                max_rank_correl = rho
-                best_list = list
-        return max_rank_correl, best_list
 
 
 def run_simulations_partially_connected_no_noise():
@@ -240,13 +214,13 @@ def run_simulations_all_edges_with_noise():
 
 
 
-def run_simulations_partially_connected_no_noise():
+def run_simulations():
     num_nodes_values = [10, 50, 100, 500, 1000]
     prob_connected_values = [0.2, 0.35, 0.5, 0.65, 0.8]
-    noise_scale = [0, 0.05, 0.1, 0.25, 0.5]
+    noise_scales = [0, 0.05, 0.1, 0.25, 0.5]
 
     param_combinations = [
-        (p1, p2, p3 ) for p1 in num_nodes_values for p2 in prob_connected_values for p3 in noise_scale
+        (p1, p2, p3 ) for p1 in num_nodes_values for p2 in prob_connected_values for p3 in noise_scales
     ]
 
     # Run the function with each set of parameters and collect results
@@ -261,41 +235,61 @@ def run_simulations_partially_connected_no_noise():
                 + str(
                     len(num_nodes_values)
                     * len(prob_connected_values)
-                    * len(noise_scale)
+                    * len(noise_scales)
                     * sims_per_combination
                 )
             )
             print(update_str)
-            simulation = Simulation(num_nodes=num_nodes, prob_connection=prob_connected, wealth_dist=None, wealth_to_income_fn=lambda x: x * 0.2 + np.random.normal(scale= 0.2 * x * scale_scale))
+            simulation = Simulation(num_nodes=num_nodes, wealth_dist=None, wealth_to_income_fn=lambda x: x * 0.2 + np.random.normal(scale= 0.2 * x * noise_scale))
             rho = simulation.rank_correlation
             wealth_gini = wealth_gini_all_nodes(simulation.G)
             directly_connected_gini = wealth_gini_directly_connected_only(simulation.G)
             not_connected_gini = wealth_gini_not_directly_connected(simulation.G)
+            weakly_connected_gini = wealth_gini_weakly_connected_only(simulation.G)
+            not_weakly_connected_gini = wealth_gini_weakly_unconnected_only(simulation.G)
             income_wealth_match_gini, income_wealth_no_match_gini = wealth_gini_directly_connected_split_by_income(
                 simulation.G)
-            results.append((num_nodes, prob_connected, noise_scale, rho, wealth_gini, directly_connected_gini, not_connected_gini, income_wealth_match_gini,
+            results.append((num_nodes, prob_connected, noise_scale, rho, wealth_gini, directly_connected_gini, not_connected_gini, weakly_connected_gini, not_weakly_connected_gini, income_wealth_match_gini,
                             income_wealth_no_match_gini))
             i += 1
 
-    # MAKE GINI TESTS BEFORE RUNNING THIS
     df_results = pd.DataFrame(results, columns=["num_nodes", "p", "noise_scale", "rank_correl", "wealth gini", "gini- directly connected",
-                                                "gini-not connected", "gini- income-wealth match", "gini- no income wealth match"])
+                                                "gini- not directly connected", "gini- weakly connected",
+                                                "gini- not weakly connected", "gini- income-wealth match", "gini- no income wealth match"])
     df_results.to_csv(
-        "results/simulation_results_partially_connected_no_noise.csv", index=False
+        "results/simulation_results_all.csv", index=False
     )
 
+# def run_pareto_simulations():
+#     # want to to adjust alpha and correl matrix
+#     # and maybe num nodes too?
+#     # and noise?
 
-run_simulations_all_edges_with_noise()
-#run_simulations_partially_connected_no_noise()
+
+
+#Code for running one simualtion, checking outputs
+
+# wealth/ degree distributions:
+degree_dist_uniform = lambda n, low=2, high=5: np.random.randint(low, high + 1, size=n)
+wealth_dist_uniform = lambda n, low=1000, high=1000000: np.random.randint(low, high + 1, size=n)
+
+mins = np.array([2., 1000.])
+alpha = np.array([2., 2.])
+correlation_matrix = np.array([[1., 0.5], [0.5, 1.]])
+n_samples=100
+pareto_samples = utils.multivariate_pareto_dist(n_samples, mins, alpha, correlation_matrix)
+degree_dist = lambda n: np.round(pareto_samples[:n, 0])
+wealth_dist = lambda n: pareto_samples[:n, 1]
+
+sim = Simulation(num_nodes=10, degree_dist=degree_dist, wealth_dist=wealth_dist)
+print("Id to wealth: ", sim.id_to_wealth)
+print("Id to income: ", sim.id_to_income)
+print("True order: ", sim.true_sorted_ids)
+print("Sorted order in sets: ", sim.sorted_nodes)
+print("Closest order: ", sim.best_rank_correlation_list)
+print("rank correl: ", sim.rank_correlation)
+sim.show()
 
 
 
-# Code for running one simualtion, checking outputs
-# sim = Simulation(num_nodes=10, wealth_to_income_fn= lambda x: 0.2 * x + np.random.normal(scale=10000))
-# print("Id to wealth: ", sim.id_to_wealth)
-# print("Id to income: ", sim.id_to_income)
-# print("True order: ", sim.true_sorted_ids)
-# print("Sorted order in sets: ", sim.sorted_nodes)
-# print("Closest order: ", sim.best_rank_correlation_list)
-# print("rank correl: ", sim.rank_correlation)
-# sim.show()
+
