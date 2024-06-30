@@ -23,43 +23,60 @@ def simple_test_graph():
         return g
     return create_test_graph()
 
+
 def test_wealth_gini_all_nodes(simple_test_graph):
-    expected_gini = 4.07 # Calculated manually
+    average_diff = 4.066666666667
+    average_wealth = 6.5
+    expected_gini = average_diff / (2 * average_wealth)
     gini = wealth_gini_all_nodes(simple_test_graph)
-    assert round(gini, 2) == expected_gini
+    assert round(gini, 3) == round(expected_gini, 3)
+
 
 def test_wealth_gini_directly_connected_only(simple_test_graph):
-    expected_connected_gini = 3.8  # Calculated manually
+    average_diff = 3.8  # Calculated manually
+    average_wealth = 6.5
+    expected_gini = average_diff / (2 * average_wealth)
     connected_gini = wealth_gini_directly_connected_only(simple_test_graph)
-    assert round(connected_gini, 2) == expected_connected_gini
+    assert round(connected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_not_directly_connected (simple_test_graph):
-    expected_connected_gini = 4.2  # Calculated manually
+    average_diff = 4.2  # Calculated manually
+    average_wealth = 6.5
+    expected_gini = average_diff / (2 * average_wealth)
     connected_gini = wealth_gini_not_directly_connected(simple_test_graph)
-    assert round(connected_gini, 2) == expected_connected_gini
+    assert round(connected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_weakly_connected(simple_test_graph):
-    expected_connected_gini = 4.14  # Calculated manually
+    average_diff = 4.142856  # Calculated manually
+    average_wealth = 6.5
+    expected_gini = average_diff / (2 * average_wealth)
     connected_gini = wealth_gini_weakly_connected_only(simple_test_graph)
-    assert round(connected_gini, 2) == expected_connected_gini
+    assert round(connected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_not_weakly_connected(simple_test_graph):
-    expected_unconnected_gini = 4.0  # Calculated manually
+    average_diff = 4.0  # Calculated manually
+    average_wealth = 6.5
+    expected_gini = average_diff / (2 * average_wealth)
     unconnected_gini = wealth_gini_weakly_unconnected_only(simple_test_graph)
-    assert round(unconnected_gini, 2) == expected_unconnected_gini
+    assert round(unconnected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_directly_connected_split_by_income(simple_test_graph):
-    expected_higher_income_gini = 4.5  # Calculated manually
-    expected_lower_income_gini = 1.0  # Calculated manually
+    average_higher_income_diff = 4.5  # Calculated manually
+    average_lower_income_diff = 1.0  # Calculated manually
+
+    average_higher_income_wealth = 7.
+    average_lower_income_wealth = 4.5
+    expected_higher_income_gini = average_higher_income_diff / (2 * average_higher_income_wealth)
+    expected_lower_income_gini = average_lower_income_diff / (2 * average_lower_income_wealth)
 
     higher_income_gini, lower_income_gini = wealth_gini_directly_connected_split_by_income(simple_test_graph)
 
-    assert round(higher_income_gini, 2) == expected_higher_income_gini
-    assert round(lower_income_gini, 2) == expected_lower_income_gini
+    assert round(higher_income_gini, 3) == round(expected_higher_income_gini, 3)
+    assert round(lower_income_gini, 3) == round(expected_lower_income_gini, 3)
 
 
 def test_rank_correlation(simple_test_graph):
