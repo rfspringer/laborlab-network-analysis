@@ -1,227 +1,159 @@
 import networkx as nx
-from itertools import combinations
+from itertools import combinations, product
 from tqdm import tqdm
 
 
 def get_wealth(node_data, wealth_attr):
     wealth = node_data.get(wealth_attr, 0)
-    return wealth if wealth >= 0 else 0.
+    return wealth if wealth > 0 else 0.0001
 
 
-def get_diff(g: nx.DiGraph, wealth_attr, show_progress=True) -> (float, int):
-    total_diff = 0.
-    pair_count = 0
-
-    node_pairs = list(combinations(g.nodes(), 2))
-    iterator = tqdm(node_pairs, desc="Processing pairs") if show_progress else node_pairs
-
-    for u, v in iterator:
-        wealth_u = get_wealth(g.nodes[u], wealth_attr)
-        wealth_v = get_wealth(g.nodes[v], wealth_attr)
-        total_diff += abs(wealth_u - wealth_v)
-        pair_count += 1
-
-    return total_diff, pair_count
-
-
-def get_mean_wealth(g: nx.DiGraph, wealth_attr) -> float:
-    wealth_values = [get_wealth(data, wealth_attr) for _, data in g.nodes(data=True)]
-
+def get_mean_wealth_of_nodes(g, nodes, wealth_attr):
+    wealth_values = [get_wealth(g.nodes[n], wealth_attr) for n in nodes]
     if wealth_values:
-        average_wealth = sum(wealth_values) / len(wealth_values)
+        return sum(wealth_values) / len(wealth_values)
     else:
-        average_wealth = None
-    print(average_wealth)
-    return average_wealth
+        return None
 
 
 def calculate_gini(average_diff, mean_wealth):
-    return average_diff / (2 * mean_wealth)
+    if mean_wealth == 0:
+        return None
+    else:
+        return average_diff / (2 * mean_wealth)
 
 
-def wealth_gini_all_nodes(g: nx.DiGraph, wealth_attr='wealth', mean_wealth=None) -> float:
-    print("Calculating Gini for all node pairs...", flush=True)
-    diff, pair_count = get_diff(g, wealth_attr)
-    mean_wealth = mean_wealth if mean_wealth is not None else get_mean_wealth(g, wealth_attr)
+def get_all_pairs(g: nx.DiGraph):
+    return [(u, v) for u, v in combinations(g.nodes(), 2)]
 
-    if mean_wealth is None or pair_count == 0:
-        print("No pairs in graph, div by zero error", flush=True)
-        return None  # Return None to indicate an undefined Gini coefficient
 
-    average_diff = (diff / pair_count)
-    gini = calculate_gini(average_diff, mean_wealth)
+def get_weakly_connected_pairs(g: nx.DiGraph):
+    pairs = []
+    for component in nx.weakly_connected_components(g):
+        for u, v in combinations(component, 2):
+            pairs.append((u, v))
+    return pairs
+
+
+def get_not_weakly_connected_pairs(g: nx.DiGraph):
+    weakly_connected_components = list(nx.weakly_connected_components(g))
+    pairs = []
+    for i in range(len(weakly_connected_components)):
+        for j in range(i + 1, len(weakly_connected_components)):
+            pairs.extend(product(weakly_connected_components[i], weakly_connected_components[j]))
+    return pairs
+
+
+def get_directly_connected_pairs(g: nx.DiGraph):
+    return list(g.edges())
+
+
+def get_not_directly_connected_pairs(g: nx.DiGraph):
+    nodes = list(g.nodes())
+    all_pairs = combinations(nodes, 2)
+    not_directly_connected_pairs = [
+        (u, v) for u, v in all_pairs if not g.has_edge(u, v)
+    ]
+    return not_directly_connected_pairs
+
+
+def get_directly_connected_pairs_by_wealth_and_income(g: nx.DiGraph, wealth_attr='wealth', income_attr='income'):
+    higher_wealth_higher_income = []
+    higher_wealth_lower_income = []
+
+    for u, v in g.edges():
+        wealth_u = g.nodes[u].get(wealth_attr, 0)
+        wealth_v = g.nodes[v].get(wealth_attr, 0)
+        income_u = g.nodes[u].get(income_attr, 0)
+        income_v = g.nodes[v].get(income_attr, 0)
+
+        if (wealth_u > wealth_v and income_u >= income_v) or (wealth_v > wealth_u and income_v >= income_u):
+            higher_wealth_higher_income.append((u, v))
+        else:
+            higher_wealth_lower_income.append((u, v))
+
+    return higher_wealth_higher_income, higher_wealth_lower_income
+
+
+def wealth_gini_from_pairs(g: nx.DiGraph, pairs, wealth_attr='wealth') -> float:
+    total_diff = 0.0
+    wealth_sum = 0.0
+    total_pairs = len(pairs)
+
+    for u, v in tqdm(pairs, total=total_pairs, desc="Processing node pairs"):
+        wealth_u = get_wealth(g.nodes[u], wealth_attr)
+        wealth_v = get_wealth(g.nodes[v], wealth_attr)
+        total_diff += abs(wealth_u - wealth_v)
+        wealth_sum += (wealth_u + wealth_v)
+
+    print("Calculating Gini Coefficient...")
+    average_diff = total_diff / total_pairs
+    average_wealth = wealth_sum / (2 * total_pairs)
+    gini = calculate_gini(average_diff, average_wealth)
+
+    return gini
+
+
+def wealth_gini_all_nodes(g: nx.DiGraph, wealth_attr='wealth') -> float:
+    print("Calculating gini for all nodes...")
+    pairs = get_all_pairs(g)
+    gini = wealth_gini_from_pairs(g, pairs, wealth_attr)
     print(f"Gini coefficient for all node pairs: {gini}")
     return gini
 
 
-def wealth_gini_weakly_connected_only(g: nx.DiGraph, wealth_attr='wealth', mean_wealth=None) -> float:
-    print("Calculating Gini for weakly connected components...", flush=True)
-    components = list(nx.weakly_connected_components(g))
-    total_diff = 0.
-    num_pairs = 0
-
-    for component in tqdm(components, desc="Processing components"):
-        subgraph = g.subgraph(component)
-        diff, pair_count = get_diff(subgraph, wealth_attr, show_progress=False)
-        total_diff += diff
-        num_pairs += pair_count
-
-    if num_pairs == 0:
-        return None  # No pairs to process
-
-    average_diff = (total_diff / num_pairs)
-    mean_wealth = mean_wealth if mean_wealth is not None else get_mean_wealth(g, wealth_attr)
-    print(average_diff)
-    print(mean_wealth)
-    gini = calculate_gini(average_diff, mean_wealth)
-    print(f"Gini coefficient for all node pairs: {gini}")
+def wealth_gini_weakly_connected(g: nx.DiGraph, wealth_attr='wealth') -> float:
+    print("Calculating gini for weakly connected nodes...")
+    pairs = get_weakly_connected_pairs(g)
+    gini = wealth_gini_from_pairs(g, pairs, wealth_attr)
+    print(f"Gini coefficient for weakly connected node pairs: {gini}")
     return gini
 
 
-def wealth_gini_directly_connected_only(g: nx.DiGraph, wealth_attr='wealth', mean_wealth=None) -> float:
-    if mean_wealth is None:
-        mean_wealth = get_mean_wealth(g, wealth_attr)
+def wealth_gini_not_weakly_connected(g: nx.DiGraph, wealth_attr='wealth') -> float:
+    print("Calculating gini for not weakly connected nodes...")
+    pairs = get_not_weakly_connected_pairs(g)
+    gini = wealth_gini_from_pairs(g, pairs, wealth_attr)
+    print(f"Gini coefficient for not weakly connected node pairs: {gini}")
+    return gini
 
 
-    print("Calculating Gini for directly connected node pairs...", flush=True)
-    total_diff = 0.
-    num_pairs = g.number_of_edges()
-
-    for node_1, node_2 in tqdm(g.edges(), total=num_pairs, desc="Processing edges"):
-        wealth_1 = get_wealth(g.nodes[node_1], wealth_attr)
-        wealth_2 = get_wealth(g.nodes[node_2], wealth_attr)
-        total_diff += abs(wealth_1 - wealth_2)
-
-    if num_pairs == 0 or mean_wealth is None:
-        return None  # No pairs to process
-
-    average_diff = total_diff / num_pairs
-    gini = calculate_gini(average_diff, mean_wealth)
+def wealth_gini_directly_connected(g: nx.DiGraph, wealth_attr='wealth') -> float:
+    print("Calculating gini for directly connected nodes...")
+    pairs = get_directly_connected_pairs(g)
+    gini = wealth_gini_from_pairs(g, pairs, wealth_attr)
     print(f"Gini coefficient for directly connected node pairs: {gini}")
     return gini
 
 
-def wealth_gini_weakly_unconnected_only(g: nx.DiGraph, wealth_attr='wealth', mean_wealth=None) -> float:
-    if mean_wealth is None:
-        mean_wealth = get_mean_wealth(g, wealth_attr)
-
-    if mean_wealth is None:
-        return None
-
-    print("Calculating Gini for weakly unconnected node pairs...", flush=True)
-    total_diff = 0.
-    num_pairs = 0
-    connected_components = list(nx.weakly_connected_components(g))
-
-    for i, component_1 in enumerate(tqdm(connected_components, desc="Processing components")):
-        for component_2 in connected_components[i + 1:]:
-            for node_1 in component_1:
-                for node_2 in component_2:
-                    wealth_1 = get_wealth(g.nodes[node_1], wealth_attr)
-                    wealth_2 = get_wealth(g.nodes[node_2], wealth_attr)
-                    total_diff += abs(wealth_1 - wealth_2)
-                    num_pairs += 1
-
-    if num_pairs == 0:
-        return None  # No pairs to process
-
-    average_diff = total_diff / num_pairs
-    gini = calculate_gini(average_diff, mean_wealth)
-    print(f"Gini coefficient for weakly unconnected node pairs: {gini}")
-    return gini
-
-
-def wealth_gini_not_directly_connected(g: nx.DiGraph, wealth_attr='wealth', mean_wealth=None) -> float:
-    if mean_wealth is None:
-        mean_wealth = get_mean_wealth(g, wealth_attr)
-
-    if mean_wealth is None:
-        return None
-
-    print("Calculating Gini for not directly connected node pairs...", flush=True)
-    total_diff = 0
-    total_combinations = len(g.nodes) * (len(g.nodes) - 1) // 2
-    num_pairs = 0
-
-    for node_1, node_2 in tqdm(combinations(g.nodes(), 2), total=total_combinations, desc="Processing pairs"):
-        if not g.has_edge(node_1, node_2):
-            wealth_1 = get_wealth(g.nodes[node_1], wealth_attr)
-            wealth_2 = get_wealth(g.nodes[node_2], wealth_attr)
-            total_diff += abs(wealth_1 - wealth_2)
-            num_pairs += 1
-
-    if num_pairs == 0:
-        return None  # No pairs to process
-
-    average_diff = total_diff / num_pairs
-    gini = calculate_gini(average_diff, mean_wealth)
+def wealth_gini_not_directly_connected(g: nx.DiGraph, wealth_attr='wealth') -> float:
+    print("Calculating gini for not directly connected nodes...")
+    pairs = get_not_directly_connected_pairs(g)
+    gini = wealth_gini_from_pairs(g, pairs, wealth_attr)
     print(f"Gini coefficient for not directly connected node pairs: {gini}")
     return gini
 
 
-def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph, wealth_attr='wealth',
-                                                   income_attr='income', mean_wealth=None) -> (float, float):
-    if mean_wealth is None:
-        mean_wealth = get_mean_wealth(g, wealth_attr)
-
-    if mean_wealth is None:
-        return None, None
-
+def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph, wealth_attr='wealth', income_attr='income') -> (float, float):
     print("Calculating Gini for directly connected node pairs split by income...", flush=True)
+    higher_income_pairs, lower_income_pairs = \
+        get_directly_connected_pairs_by_wealth_and_income(g, wealth_attr, income_attr)
+    higher_income_gini = wealth_gini_from_pairs(g, higher_income_pairs, wealth_attr)
+    lower_income_gini = wealth_gini_from_pairs(g, lower_income_pairs, wealth_attr)
 
-    wealthier_higher_income_diff = 0.
-    wealthier_lower_income_diff = 0.
-    wealthier_higher_num_pairs = 0
-    wealthier_lower_num_pairs = 0
+    print(f"Gini coefficient for wealthier-higher-income pairs: {higher_income_gini}")
+    print(f"Gini coefficient for wealthier-lower-income pairs: {lower_income_gini}")
 
-    total_edges = g.number_of_edges()
-    for node_1, node_2 in tqdm(g.edges(), total=total_edges, desc="Processing edges"):
-        wealth_1 = get_wealth(g.nodes[node_1], wealth_attr)
-        wealth_2 = get_wealth(g.nodes[node_2], wealth_attr)
-        diff = abs(wealth_1 - wealth_2)
-
-        higher_wealth_node = node_1 if wealth_1 >= wealth_2 else node_2
-        lower_wealth_node = node_2 if higher_wealth_node == node_1 else node_1
-        higher_income_node = higher_wealth_node if get_wealth(g.nodes[higher_wealth_node], income_attr) >= get_wealth(
-            g.nodes[lower_wealth_node], income_attr) else lower_wealth_node
-
-        if higher_wealth_node == higher_income_node:
-            wealthier_higher_income_diff += diff
-            wealthier_higher_num_pairs += 1
-        else:
-            wealthier_lower_income_diff += diff
-            wealthier_lower_num_pairs += 1
-
-    wealthier_higher_average_diff = (
-                wealthier_higher_income_diff / wealthier_higher_num_pairs) if wealthier_higher_num_pairs != 0 else 0.
-    wealthier_lower_average_diff = (
-                wealthier_lower_income_diff / wealthier_lower_num_pairs) if wealthier_lower_num_pairs != 0 else 0.
-
-    wealthier_higher_income_gini = calculate_gini(wealthier_higher_average_diff, mean_wealth)
-    wealthier_lower_income_gini = calculate_gini(wealthier_lower_average_diff, mean_wealth)
-
-    print(f"Gini coefficient for wealthier-higher-income pairs: {wealthier_higher_income_gini}")
-    print(f"Gini coefficient for wealthier-lower-income pairs: {wealthier_lower_income_gini}")
-
-    return wealthier_higher_income_gini, wealthier_lower_income_gini
+    return higher_income_gini, lower_income_gini
 
 
-def calculate_all_ginis(g: nx.DiGraph, wealth_attr='wealth', income_attr='income', mean_wealth=None):
-    if mean_wealth is None:
-        mean_wealth = get_mean_wealth(g, wealth_attr)
-
-    if mean_wealth is None:
-        return None
-
-    print(f"Mean wealth: {mean_wealth}")
-
+def calculate_all_ginis(g: nx.DiGraph, wealth_attr='wealth', income_attr='income'):
     ginis = {
-        "all_nodes": wealth_gini_all_nodes(g, wealth_attr, mean_wealth),
-        "weakly_connected_only": wealth_gini_weakly_connected_only(g, wealth_attr, mean_wealth),
-        "directly_connected_only": wealth_gini_directly_connected_only(g, wealth_attr, mean_wealth),
-        "weakly_unconnected_only": wealth_gini_weakly_unconnected_only(g, wealth_attr, mean_wealth),
-        "not_directly_connected": wealth_gini_not_directly_connected(g, wealth_attr, mean_wealth),
-        "directly_connected_split_by_income": wealth_gini_directly_connected_split_by_income(g, wealth_attr, income_attr, mean_wealth)
+        "all_nodes": wealth_gini_all_nodes(g, wealth_attr),
+        "weakly_connected_only": wealth_gini_weakly_connected(g, wealth_attr),
+        "not_weakly_connected_only": wealth_gini_not_weakly_connected(g, wealth_attr),
+        "not_directly_connected": wealth_gini_not_directly_connected(g, wealth_attr),
+        "directly_connected_split_by_income": wealth_gini_directly_connected_split_by_income(g, wealth_attr, income_attr)
     }
 
     return ginis

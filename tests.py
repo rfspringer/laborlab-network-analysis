@@ -1,6 +1,9 @@
 import pytest
+import numpy as np
 import networkx as nx
 import utils
+import pickle
+from graph_analysis import *
 
 import network_sort
 from graph_analysis import *
@@ -33,45 +36,32 @@ def test_wealth_gini_all_nodes(simple_test_graph):
 
 
 def test_wealth_gini_directly_connected_only(simple_test_graph):
-    average_diff = 3.8  # Calculated manually
-    average_wealth = 6.5
-    expected_gini = average_diff / (2 * average_wealth)
-    connected_gini = wealth_gini_directly_connected_only(simple_test_graph)
+    expected_gini = 0.28358 # Calculated manually
+    connected_gini = wealth_gini_directly_connected(simple_test_graph)
     assert round(connected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_not_directly_connected (simple_test_graph):
-    average_diff = 4.2  # Calculated manually
-    average_wealth = 6.5
-    expected_gini = average_diff / (2 * average_wealth)
+    expected_gini = 0.328125    # Calculated manually
     connected_gini = wealth_gini_not_directly_connected(simple_test_graph)
     assert round(connected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_weakly_connected(simple_test_graph):
-    average_diff = 4.142856  # Calculated manually
-    average_wealth = 6.5
-    expected_gini = average_diff / (2 * average_wealth)
-    connected_gini = wealth_gini_weakly_connected_only(simple_test_graph)
+    expected_gini = 0.31183 # Calculated manually
+    connected_gini = wealth_gini_weakly_connected(simple_test_graph)
     assert round(connected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_not_weakly_connected(simple_test_graph):
-    average_diff = 4.0  # Calculated manually
-    average_wealth = 6.5
-    expected_gini = average_diff / (2 * average_wealth)
-    unconnected_gini = wealth_gini_weakly_unconnected_only(simple_test_graph)
+    expected_gini = 0.31373  # Calculated manually
+    unconnected_gini = wealth_gini_not_weakly_connected(simple_test_graph)
     assert round(unconnected_gini, 3) == round(expected_gini, 3)
 
 
 def test_wealth_gini_directly_connected_split_by_income(simple_test_graph):
-    average_higher_income_diff = 4.5  # Calculated manually
-    average_lower_income_diff = 1.0  # Calculated manually
-
-    average_higher_income_wealth = 7.
-    average_lower_income_wealth = 4.5
-    expected_higher_income_gini = average_higher_income_diff / (2 * average_higher_income_wealth)
-    expected_lower_income_gini = average_lower_income_diff / (2 * average_lower_income_wealth)
+    expected_higher_income_gini = 0.31034
+    expected_lower_income_gini = 0.11111
 
     higher_income_gini, lower_income_gini = wealth_gini_directly_connected_split_by_income(simple_test_graph)
 
@@ -93,4 +83,41 @@ def test_rank_correlation(simple_test_graph):
     print(wealth_sorted_nodes)
     print(list)
     print(rho)
+
+
+def test_complete_graph_output():
+    def gini(array):
+        """Calculate the Gini coefficient of a numpy array."""
+        # All values are treated equally, arrays must be 1d:
+        array = array.flatten()
+        if np.amin(array) < 0:
+            # Values cannot be negative:
+            array -= np.amin(array)
+        # Values cannot be 0:
+        array += 0.0000001
+        # Values must be sorted:
+        array = np.sort(array)
+        # Index per array element:
+        index = np.arange(1, array.shape[0] + 1)
+        # Number of array elements:
+        n = array.shape[0]
+        # Gini coefficient:
+        return ((np.sum((2 * index - n - 1) * array)) / (n * np.sum(array))) * n/(n-1)
+
+    wealths = [1., 5., 72., 3., 6., 2.]
+    graph_array = np.array(wealths)
+
+    complete_graph = nx.DiGraph()
+    for i, weight in enumerate(wealths):
+        complete_graph.add_node(i, wealth=weight)
+
+    # Add directed edges
+    for i in range(len(wealths)):
+        for j in range(i + 1, len(wealths)):
+            complete_graph.add_edge(i, j)
+
+    assert round(gini(graph_array), 3) == round(wealth_gini_directly_connected(complete_graph), 3)
+    assert round(gini(graph_array), 3) == round(wealth_gini_weakly_connected(complete_graph), 3)
+    assert round(gini(graph_array), 3) == round(wealth_gini_all_nodes(complete_graph), 3)
+
 

@@ -114,3 +114,4 @@ def multivariate_pareto_dist(n_samples, mins, alpha, correlation_matrix):
         samples[:, i] = mins[i] / ((1 - u[:, i]) ** (1 / alpha[i]))
 
     return samples
+

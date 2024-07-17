@@ -260,6 +260,55 @@ def run_simulations():
         "results/simulation_results_all.csv", index=False
     )
 
+def run_simulations_varying_correlation():
+    num_nodes_values = [100]
+    mins = [np.array([2., 1000.])]
+    alpha = [np.array([2., 2.])]
+    correlations = [correlation_matrix = np.array([[1., 0.5], [0.5, 1.]])]
+
+    noise_scales = [0, 0.05, 0.1, 0.25, 0.5]
+
+    param_combinations = [
+        (p1, p2, p3 ) for p1 in num_nodes_values for p2 in prob_connected_values for p3 in noise_scales
+    ]
+
+    # Run the function with each set of parameters and collect results
+    results = []
+    i = 1
+    sims_per_combination = 10
+    for num_nodes, prob_connected, noise_scale in param_combinations:
+        for j in range(sims_per_combination):
+            update_str = (
+                str(i)
+                + "/"
+                + str(
+                    len(num_nodes_values)
+                    * len(prob_connected_values)
+                    * len(noise_scales)
+                    * sims_per_combination
+                )
+            )
+            print(update_str)
+            simulation = Simulation(num_nodes=num_nodes, wealth_dist=None, wealth_to_income_fn=lambda x: x * 0.2 + np.random.normal(scale= 0.2 * x * noise_scale))
+            rho = simulation.rank_correlation
+            wealth_gini = wealth_gini_all_nodes(simulation.G)
+            directly_connected_gini = wealth_gini_directly_connected_only(simulation.G)
+            not_connected_gini = wealth_gini_not_directly_connected(simulation.G)
+            weakly_connected_gini = wealth_gini_weakly_connected_only(simulation.G)
+            not_weakly_connected_gini = wealth_gini_weakly_unconnected_only(simulation.G)
+            income_wealth_match_gini, income_wealth_no_match_gini = wealth_gini_directly_connected_split_by_income(
+                simulation.G)
+            results.append((num_nodes, prob_connected, noise_scale, rho, wealth_gini, directly_connected_gini, not_connected_gini, weakly_connected_gini, not_weakly_connected_gini, income_wealth_match_gini,
+                            income_wealth_no_match_gini))
+            i += 1
+
+    df_results = pd.DataFrame(results, columns=["num_nodes", "p", "noise_scale", "rank_correl", "wealth gini", "gini- directly connected",
+                                                "gini- not directly connected", "gini- weakly connected",
+                                                "gini- not weakly connected", "gini- income-wealth match", "gini- no income wealth match"])
+    df_results.to_csv(
+        "results/simulation_results_all.csv", index=False
+    )
+
 # def run_pareto_simulations():
 #     # want to to adjust alpha and correl matrix
 #     # and maybe num nodes too?
