@@ -2,7 +2,7 @@ import networkx as nx
 from itertools import permutations, product
 from scipy.stats import spearmanr
 import numpy as np
-import scipy
+from scipy import stats
 
 
 def is_valid_network(graph: nx.DiGraph):
@@ -75,43 +75,81 @@ def get_list_of_set_permutations(list_of_sets):
 
     return result
 
+#
+# def calculate_rank_correlation(sorted_nodes, ranks_by_id):
+#     """
+#     Calculate Spearman rank correlation between true sorted order of wealth and results from sorting algorithm.
+#     :param sorted_nodes: List of nodes sorted by the algorithm.
+#     :param ranks_by_id: Dictionary of node ranks by their IDs.
+#     :return: Spearman rank correlation between true order and sorting algorithm results, list used to calculate result.
+#     """
+#
+#     # All possible orderings of elements from the sorting algorithm (in case of ties, though this is infrequent unless weights are often the same)
+#     all_lists = get_list_of_set_permutations(sorted_nodes)
+#
+#     # Checks through all possible orders within sets to get closest to correct one (since all would be valid orderings)
+#     best_list = None
+#     max_rank_correl = -1
+#     for lst in all_lists:
+#         list_ranks = [ranks_by_id[node] for node in lst]
+#         true_ranks = [i + 1 for i in range(len(lst))]
+#         # Calculate Spearman rank correlation
+#         rho, _ = spearmanr(list_ranks, true_ranks)
+#         if rho >= max_rank_correl:
+#             max_rank_correl = rho
+#             best_list = lst
+#     return max_rank_correl, best_list
+
+
 def calculate_rank_correlation(sorted_nodes, ranks_by_id):
     """
     Calculate Spearman rank correlation between true sorted order of wealth and results from sorting algorithm.
-    :param sorted_nodes: List of nodes sorted by the algorithm.
+    :param sorted_nodes: List of sets of nodes sorted by the algorithm. Nodes in the same set are tied.
     :param ranks_by_id: Dictionary of node ranks by their IDs.
     :return: Spearman rank correlation between true order and sorting algorithm results, list used to calculate result.
     """
 
-    # All possible orderings of elements from the sorting algorithm (in case of ties, though this is infrequent unless weights are often the same)
-    all_lists = get_list_of_set_permutations(sorted_nodes)
+    # Flatten the sorted nodes, preserving order
+    flat_sorted_nodes = [node for node_set in sorted_nodes for node in node_set]
 
-    # Checks through all possible orders within sets to get closest to correct one (since all would be valid orderings)
-    best_list = None
-    max_rank_correl = -1
-    for lst in all_lists:
-        list_ranks = [ranks_by_id[node] for node in lst]
-        true_ranks = [i + 1 for i in range(len(lst))]
-        # Calculate Spearman rank correlation
-        rho, _ = spearmanr(list_ranks, true_ranks)
-        if rho >= max_rank_correl:
-            max_rank_correl = rho
-            best_list = lst
-    return max_rank_correl, best_list
+    # Get the ranks of the nodes based on their true ranks
+    list_ranks = [ranks_by_id[node] for node in flat_sorted_nodes]
+
+    # Create a rank list where tied nodes have the average of their ranks
+    true_ranks = []
+    current_rank = 1
+    for node_set in sorted_nodes:
+        set_size = len(node_set)
+        avg_rank = sum(range(current_rank, current_rank + set_size)) / set_size
+        true_ranks.extend([avg_rank] * set_size)
+        current_rank += set_size
+
+    # Calculate Spearman rank correlation
+    rho, _ = spearmanr(list_ranks, true_ranks)
+
+    return rho, flat_sorted_nodes
 
 
-def multivariate_pareto_dist(n_samples, mins, alpha, correlation_matrix):
+def multivariate_pareto_dist(n_samples, mins, alpha, correlation_coefficient):
     n_vars = len(mins)
 
-    # Generate correlated uniform variables using Gaussian copula
-    L = scipy.linalg.cholesky(correlation_matrix, lower=True)
-    standard_normal_vars = np.random.normal(size=(n_samples, n_vars))
-    u = scipy.stats.norm.cdf(np.dot(standard_normal_vars, L))
+    # Create correlation matrix
+    correlation_matrix = np.full((n_vars, n_vars), correlation_coefficient)
+    np.fill_diagonal(correlation_matrix, 1)
 
-    # Transform to Pareto distribution
+    # add to diagonal to ensure positive definiteness
+    correlation_matrix += np.eye(n_vars) * 1e-6
+
+    # Generate correlated normal variables
+    mean = np.zeros(n_vars)
+    normal_samples = stats.multivariate_normal(mean, correlation_matrix).rvs(n_samples)
+
+    # Transform to uniform using the standard normal CDF
+    u = stats.norm.cdf(normal_samples)
+
+    # Transform to Pareto using inverse CDF
     samples = np.zeros((n_samples, n_vars))
     for i in range(n_vars):
-        samples[:, i] = mins[i] / ((1 - u[:, i]) ** (1 / alpha[i]))
+        samples[:, i] = mins[i] * (1 - u[:, i]) ** (-1 / alpha[i])
 
     return samples
-
