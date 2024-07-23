@@ -119,5 +119,3 @@ def test_complete_graph_output():
     assert round(gini(graph_array), 3) == round(wealth_gini_directly_connected(complete_graph), 3)
     assert round(gini(graph_array), 3) == round(wealth_gini_weakly_connected(complete_graph), 3)
     assert round(gini(graph_array), 3) == round(wealth_gini_all_nodes(complete_graph), 3)
-
-
