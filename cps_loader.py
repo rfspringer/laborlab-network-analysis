@@ -2,7 +2,9 @@ import pandas as pd
 from ipumspy import readers
 import numpy as np
 import logging
-import math
+import warnings
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 
 # File paths
 cps_filepath = './data/cps_data.dat.gz'
@@ -10,7 +12,8 @@ cps_codebook_filepath = './data/cps_codebook.xml'
 swap_filename = './data/swapvalues_1976-2010.csv'
 
 # Constants
-INCOME_VARS = ['INCTOT', 'INCWAGE', 'INCBUS', 'INCFARM', 'INCINT', 'INCDRT', 'INCRENT', 'INCDIVID', 'INCSS', 'INCWELFR', 'INCLONGJ']
+INCOME_VARS = ['INCTOT', 'INCWAGE', 'INCBUS', 'INCFARM', 'INCINT', 'INCDRT', 'INCRENT', 'INCDIVID',
+               'INCSS', 'INCWELFR', 'INCLONGJ', 'OINCBUS', 'OINCWAGE', 'OINCFARM']
 CAPITAL_INCOME_VARS = ['INCDRT', 'INCINT']
 LABOR_INCOME_VARS = ['INCWAGE', 'INCBUS', 'INCFARM']
 VARS_TO_SET_NONNEG = ['INCRENT', 'INCDRT', 'INCBUS', 'INCFARM'] # rent and self-employment income variables
@@ -36,11 +39,10 @@ def change_income_dtypes_to_float(df):
     return df
 
 
-
 def fix_capital_income_topcoding(df):
     """Adjust specific topcoding inconsistencies in capital income data."""
-    df['INCINT'] = df['INCINT'].replace(9999997, 99999)
-    df['INCRENT'] = df['INCRENT'].replace(9999997, 99999)
+    df['INCINT'] = df['INCINT'].replace(9999997., 99999.)
+    df['INCRENT'] = df['INCRENT'].replace(9999997., 99999.)
     return df
 
 
@@ -74,7 +76,7 @@ def fill_in_topcodes(df):
 
 def manually_fix_mistakes(df):
     """Manually fix known data mistakes."""
-    df.loc[(df['YEAR'] == 1990) & (df['INCLONGJ_SWAP'] == 399998), 'INCLONGJ_SWAP'] = 300000
+    df.loc[(df['YEAR'] == 1990) & (df['INCLONGJ_SWAP'] == 399998.), 'INCLONGJ_SWAP'] = 300000.
     return df
 
 def reconstruct_wage_and_se_earnings_after_1988(df):
@@ -88,9 +90,9 @@ def reconstruct_wage_and_se_earnings_after_1988(df):
 def adjust_for_2019_topcode_jump(df):
     """Adjust for the topcode jump in 2019 for capital income."""
     topcode_limits = {
-        'INCINT': 99999,
-        'INCRENT': 99999,
-        'INCDIVID': 100000
+        'INCINT': 99999.,
+        'INCRENT': 99999.,
+        'INCDIVID': 100000.
     }
     for col, limit in topcode_limits.items():
         df.loc[df[col] > limit, col] = limit
@@ -117,25 +119,24 @@ def apply_topcoding_adjustment(df):
     df['af'] = 1.53 + (1.85 - 1.53) * (df['YEAR'] - 1976) / (1994 - 1976)
 
     # 1976-1985: topcode at 99999
-    mask = (df['YEAR'] <= 1985) & (df['INCWAGE'] >= 99997)
     for var in ['INCWAGE', 'INCBUS', 'INCFARM']:
+        mask = (df['YEAR'] <= 1985) & (df[var] >= 99997) & (df[var] <= 100000)
         df.loc[mask, var] *= df['af']
 
     # 1986-1987: internal topcode at 250000
-    mask = df['YEAR'].between(1986, 1987) & (df['INCWAGE'] >= 250000)
     for var in ['INCWAGE', 'INCBUS', 'INCFARM']:
-         df.loc[mask, var] *= df['af']
+        mask = df['YEAR'].between(1986, 1987) & (df[var] == 250000)
+        df.loc[mask, var] *= df['af']
 
 
     # 1988-1993: internal topcode at 299999 for longest job
-    mask = (df['YEAR'].between(1988, 1993)) & (df['INCLONGJ'].fillna(0) >= 299999)
+    mask = (df['YEAR'].between(1988, 1993)) & (df['INCLONGJ'].fillna(0) >= 299999) & (df['INCLONGJ'] <= 300000)
     df.loc[mask, 'INCLONGJ'] *= df['af']
 
     mask = df['YEAR'].between(1988, 1993)
     df.loc[mask & (df['SRCEARN'] == 1), 'INCWAGE'] = df['INCLONGJ'] + df['OINCWAGE']
     df.loc[mask & (df['SRCEARN'] == 2), 'INCBUS'] = df['INCLONGJ'] + df['OINCBUS']
     df.loc[mask & (df['SRCEARN'] == 3), 'INCFARM'] = df['INCLONGJ'] + df['OINCFARM']
-
     return df
 
 
@@ -167,18 +168,19 @@ def adjust_capital_income_for_underreporting(df):
 
 def filter_by_age(df):
     """Filter dataset by age range."""
-    return df[(df['AGE'] >= HARD_MIN_AGE)]
+    return df[(df['AGE'] >= HARD_MIN_AGE) & (df['AGE'] <= 65)]
 
 def set_negative_rents_and_self_employed_income_to_0(df):
     """Set negative rents and self-employed income to zero."""
     for col in VARS_TO_SET_NONNEG:
-        df[col] = df[col].clip(lower=0)
+        df[f'{col}_inclneg'] = df[col]
+        df[f'{col}'] = df[col].clip(lower=0.)
     return df
 
 
 def set_zero_hours_for_nonworkers(df):
     """Set usual hours to zero for non-workers."""
-    df['UHRSWORKLY_nonneg'] = np.where(df['UHRSWORKLY'] == 999, 0, df['UHRSWORKLY'])
+    df['UHRSWORKLY'] = np.where(df['UHRSWORKLY'] == 999, 0, df['UHRSWORKLY'])
     return df
 
 
@@ -187,19 +189,21 @@ def add_calculated_columns_for_income(df):
     df['labor_income'] = df[LABOR_INCOME_VARS].sum(axis=1)
     df['total_income'] = df['capital_income'] + df['labor_income']
     df['income_year'] = df['YEAR'] - 1
-    df['log_capital_income'] = np.log(df['capital_income'])
-    df['log_labor_income'] = np.log(df['labor_income'])
-    df['log_total_income'] = np.log(df['total_income'])
-    df['log_capital_over_labor'] = np.where(df['labor_income'] > 0, np.log(1 + df['capital_income'] / df['labor_income']), np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        df['log_capital_income'] = np.log(df['capital_income'])
+        df['log_labor_income'] = np.log(df['labor_income'])
+        df['log_total_income'] = np.log(df['total_income'])
+        df['log_capital_over_labor'] = np.where(df['labor_income'] > 0, np.log(1 + df['capital_income'] / df['labor_income']), np.nan)
     return df
 
 
 def flag_full_time_full_year(df):
     """Flag dataset for full-time, full-year workers."""
     df = set_zero_hours_for_nonworkers(df)
-    df['yearly_hours_worked'] = (df['WKSWORK1'] * df['UHRSWORKLY_nonneg']).astype(float)
+    df['yearly_hours_worked'] = (df['WKSWORK1'] * df['UHRSWORKLY']).astype(float)
     df['hourly_wage'] = np.divide(df['labor_income'], df['yearly_hours_worked'], out=np.zeros(df['yearly_hours_worked'].shape, dtype=float), where=df['labor_income']>0.)
-    df['is_full_time_full_year'] = (df['WKSWORK1'] >= 49) & (df['UHRSWORKLY_nonneg'] >= 40) & (df['hourly_wage'] >= 4)
+    df['is_full_time_full_year'] = (df['WKSWORK1'] >= 49) & (df['UHRSWORKLY'] >= 40) & (df['hourly_wage'] >= 4)
     return df
 
 
@@ -208,11 +212,11 @@ def process_data(cps_df, swap_df, measure_top_1_percent=False):
     cps_df = change_income_dtypes_to_float(cps_df)
     cps_df = fix_capital_income_topcoding(cps_df)
     cps_df = apply_topcoding_swaps(cps_df, swap_df)
-    cps_df = adjust_incomes_for_inflation(cps_df)
-    cps_df = adjust_capital_income_for_underreporting(cps_df)
     cps_df = filter_by_age(cps_df)
-    cps_df = set_negative_rents_and_self_employed_income_to_0(cps_df)
     cps_df = set_zero_hours_for_nonworkers(cps_df)
+    cps_df = adjust_incomes_for_inflation(cps_df)
+    cps_df = set_negative_rents_and_self_employed_income_to_0(cps_df)
+    cps_df = adjust_capital_income_for_underreporting(cps_df)
     cps_df = add_calculated_columns_for_income(cps_df)
     cps_df = flag_full_time_full_year(cps_df)
     if measure_top_1_percent:
@@ -231,54 +235,56 @@ def apply_filters(df, min_age=16, max_age=999, full_time_full_year_only=False, r
 
 
 def flag_top_1_percent(df):
-    """Remove top 1% of income earners."""
+    # maybe should only be doing this on "lab2" ????
+    #
+    """Flag top 1% of income earners."""
     for col in ['labor_income', 'capital_income']:
         for year in df['income_year'].unique():
             for sex in df['SEX'].unique():
-                subset = df[(df['income_year'] == year) & (df['SEX'] == sex)]
+                subset = df[(df['income_year'] == year) & (df['SEX'] == sex) & df['is_full_time_full_year'] & (df['AGE'] > 25) & (df['AGE'] <= 65)]
                 top_1_percent_threshold = subset[col].quantile(0.99)
                 df.loc[subset.index, f'{col}_99'] = top_1_percent_threshold
     df['winsor99'] = (df['labor_income'] <= df['labor_income_99']) & (df['capital_income'] <= df['capital_income_99'])
     return df
-
-
-def read_data_chunked():
-    print("Processing swap data...")
-    swap_df = pd.read_csv(swap_filename)
-    swap_df = process_swap_data(swap_df)
-    print("Done!")
-
-    print("Setting up IPUMS Readers...")
-    ddi_codebook = readers.read_ipums_ddi(cps_codebook_filepath)
-    iter_microdata = readers.read_microdata_chunked(ddi_codebook, cps_filepath, chunksize=10000)
-    print("Done!")
-
-    year_data_dict = {}
-    chunk_num = 0
-
-    for chunk in iter_microdata:
-        print(f"\rProcessing year: {chunk['YEAR'].max()}", end="")
-        chunk_num += 1
-        chunk = chunk[chunk['YEAR'] >= MIN_DATA_YEAR]
-        if not chunk.empty:
-            processed_data = process_data(chunk, swap_df)
-            for year, group in processed_data.groupby('income_year'):
-                if year in year_data_dict:
-                    year_data_dict[year] = pd.concat([year_data_dict[year], group])
-                else:
-                    year_data_dict[year] = group
-
-    print("\nFinished processing CPS data")
-
-    # save_ data
-    print("Saving CPS data...")
-    for year, df in year_data_dict.items():
-        df = flag_top_1_percent(df)
-        filename = f'./data/cps_data/{str(year)}.csv'
-        df.to_csv(filename, index=False)
-
-
-    print("Done!")
+#
+#
+# def read_data_chunked():
+#     print("Processing swap data...")
+#     swap_df = pd.read_csv(swap_filename)
+#     swap_df = process_swap_data(swap_df)
+#     print("Done!")
+#
+#     print("Setting up IPUMS Readers...")
+#     ddi_codebook = readers.read_ipums_ddi(cps_codebook_filepath)
+#     iter_microdata = readers.read_microdata_chunked(ddi_codebook, cps_filepath, chunksize=10000)
+#     print("Done!")
+#
+#     year_data_dict = {}
+#     chunk_num = 0
+#
+#     for chunk in iter_microdata:
+#         print(f"\rProcessing year: {chunk['YEAR'].max()}", end="")
+#         chunk_num += 1
+#         chunk = chunk[chunk['YEAR'] >= MIN_DATA_YEAR]
+#         if not chunk.empty:
+#             processed_data = process_data(chunk, swap_df)
+#             for year, group in processed_data.groupby('income_year'):
+#                 if year in year_data_dict:
+#                     year_data_dict[year] = pd.concat([year_data_dict[year], group])
+#                 else:
+#                     year_data_dict[year] = group
+#
+#     print("\nFinished processing CPS data")
+#
+#     # save_ data
+#     print("Saving CPS data...")
+#     for year, df in year_data_dict.items():
+#         df = flag_top_1_percent(df)
+#         filename = f'./data/cps_data/{str(year)}.csv'
+#         df.to_csv(filename, index=False)
+#
+#
+#     print("Done!")
 
 
 def read_data():
@@ -312,8 +318,54 @@ def read_data():
     all_data.to_csv(filename, index=False)
 
 
+def read_data_chunked_parallel():
+    print("Processing swap data...")
+    swap_df = pd.read_csv(swap_filename)
+    swap_df = process_swap_data(swap_df)
+    print("Done!")
+
+    print("Setting up IPUMS Readers...")
+    ddi_codebook = readers.read_ipums_ddi(cps_codebook_filepath)
+    iter_microdata = readers.read_microdata_chunked(ddi_codebook, cps_filepath, chunksize=10000)
+    print("Done!")
+
+    # Initialize a list to collect DataFrames
+    dataframes = []
+
+    # Use ProcessPoolExecutor for parallel processing
+    with ProcessPoolExecutor() as executor:
+        future_to_chunk = {}
+        for chunk in iter_microdata:
+            chunk = chunk[chunk['YEAR'] >= MIN_DATA_YEAR]  # Filter by year
+            if not chunk.empty:
+                future = executor.submit(process_data, chunk, swap_df)
+                future_to_chunk[future] = chunk
+
+        # Collect results as they are completed
+        for future in as_completed(future_to_chunk):
+            try:
+                processed_data = future.result()
+                if not processed_data.empty:
+                    dataframes.append(processed_data)
+            except Exception as e:
+                print(f"Error processing chunk: {e}")
+
+    # Concatenate all DataFrames into a single DataFrame
+    all_data = pd.concat(dataframes, ignore_index=True)
+
+    print("\nFinished processing CPS data")
+
+    # Save data
+    print("Flagging top 1% earners for each year...")
+    all_data = flag_top_1_percent(all_data)
+    filename = f'./data/cps_data/all_years.csv'
+    print("Saving CPS data...")
+    all_data.to_csv(filename, index=False)
+    print("Done!")
+
+
 if __name__ == "__main__":
-    read_data()
+   read_data()
 
 
 

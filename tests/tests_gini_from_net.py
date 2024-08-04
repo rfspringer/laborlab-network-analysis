@@ -3,10 +3,10 @@ import numpy as np
 import networkx as nx
 import utils
 import pickle
-from graph_analysis import *
+from graph_analysis_from_net import *
 
 import network_sort
-from graph_analysis import *
+from graph_analysis_from_net import *
 
 @pytest.fixture
 def simple_test_graph():

@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import network_sort
 import utils
 import pandas as pd
-from graph_analysis import *
+from graph_analysis_from_net import *
 import matplotlib.cm as cm
 
 
