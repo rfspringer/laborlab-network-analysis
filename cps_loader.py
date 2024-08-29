@@ -13,7 +13,7 @@ swap_filename = './data/swapvalues_1976-2010.csv'
 
 # Constants
 INCOME_VARS = ['INCTOT', 'INCWAGE', 'INCBUS', 'INCFARM', 'INCINT', 'INCDRT', 'INCRENT', 'INCDIVID',
-               'INCSS', 'INCWELFR', 'INCLONGJ', 'OINCBUS', 'OINCWAGE', 'OINCFARM']
+               'INCSS', 'INCWELFR', 'INCLONGJ', 'OINCBUS', 'OINCWAGE', 'OINCFARM', 'HHINCOME', 'INCGOV', 'INCALOTH', 'INCRETIR', 'INCSSI', 'INCUNEMP', 'INCOTHER']
 CAPITAL_INCOME_VARS = ['INCDRT', 'INCINT']
 LABOR_INCOME_VARS = ['INCWAGE', 'INCBUS', 'INCFARM']
 VARS_TO_SET_NONNEG = ['INCRENT', 'INCDRT', 'INCBUS', 'INCFARM'] # rent and self-employment income variables
@@ -168,7 +168,8 @@ def adjust_capital_income_for_underreporting(df):
 
 def filter_by_age(df):
     """Filter dataset by age range."""
-    return df[(df['AGE'] >= HARD_MIN_AGE) & (df['AGE'] <= 65)]
+    return df[(df['AGE'] >= HARD_MIN_AGE)]
+# to replicate exactly: return df[(df['AGE'] >= HARD_MIN_AGE) & (df['AGE'] <= 65)]
 
 def set_negative_rents_and_self_employed_income_to_0(df):
     """Set negative rents and self-employed income to zero."""
@@ -200,10 +201,15 @@ def add_calculated_columns_for_income(df):
 
 def flag_full_time_full_year(df):
     """Flag dataset for full-time, full-year workers."""
-    df = set_zero_hours_for_nonworkers(df)
     df['yearly_hours_worked'] = (df['WKSWORK1'] * df['UHRSWORKLY']).astype(float)
     df['hourly_wage'] = np.divide(df['labor_income'], df['yearly_hours_worked'], out=np.zeros(df['yearly_hours_worked'].shape, dtype=float), where=df['labor_income']>0.)
     df['is_full_time_full_year'] = (df['WKSWORK1'] >= 49) & (df['UHRSWORKLY'] >= 40) & (df['hourly_wage'] >= 4)
+    return df
+
+
+def add_state_x_industry(df):
+    df['stateXindustry_1950'] = df['STATEFIP'].astype(str) + '-' + df['IND1950'].astype(str)
+    df['stateXindustry'] = df['STATEFIP'].astype(str) + '-' + df['IND'].astype(str)
     return df
 
 
@@ -221,6 +227,7 @@ def process_data(cps_df, swap_df, measure_top_1_percent=False):
     cps_df = flag_full_time_full_year(cps_df)
     if measure_top_1_percent:
         cps_df = flag_top_1_percent(cps_df)
+    cps_df = add_state_x_industry(cps_df)
     return cps_df
 
 
@@ -241,7 +248,7 @@ def flag_top_1_percent(df):
     for col in ['labor_income', 'capital_income']:
         for year in df['income_year'].unique():
             for sex in df['SEX'].unique():
-                subset = df[(df['income_year'] == year) & (df['SEX'] == sex) & df['is_full_time_full_year'] & (df['AGE'] > 25) & (df['AGE'] <= 65)]
+                subset = df[(df['income_year'] == year) & (df['SEX'] == sex)]
                 top_1_percent_threshold = subset[col].quantile(0.99)
                 df.loc[subset.index, f'{col}_99'] = top_1_percent_threshold
     df['winsor99'] = (df['labor_income'] <= df['labor_income_99']) & (df['capital_income'] <= df['capital_income_99'])
@@ -285,6 +292,13 @@ def flag_top_1_percent(df):
 #
 #
 #     print("Done!")
+def save_data(all_data):
+    filename = f'./data/cps_data/all_years.csv'
+    all_data.to_csv(filename, index=False)
+    for year in range(MIN_DATA_YEAR, 2024):
+        filename = f'./data/cps_data/{year}_sample.csv'
+        year_data = all_data[all_data['YEAR'] == year]
+        year_data.to_csv(filename, index=False)
 
 
 def read_data():
@@ -309,59 +323,13 @@ def read_data():
             processed_data = process_data(chunk, swap_df)
             all_data = pd.concat([all_data, processed_data], ignore_index=True)
 
+    all_data = flag_top_1_percent(all_data)
     print("\nFinished processing CPS data")
 
+    save_data(all_data)
     # save_ data
     print("Saving CPS data...")
-    all_data = flag_top_1_percent(all_data)
-    filename = f'./data/cps_data/all_years.csv'
-    all_data.to_csv(filename, index=False)
 
-
-def read_data_chunked_parallel():
-    print("Processing swap data...")
-    swap_df = pd.read_csv(swap_filename)
-    swap_df = process_swap_data(swap_df)
-    print("Done!")
-
-    print("Setting up IPUMS Readers...")
-    ddi_codebook = readers.read_ipums_ddi(cps_codebook_filepath)
-    iter_microdata = readers.read_microdata_chunked(ddi_codebook, cps_filepath, chunksize=10000)
-    print("Done!")
-
-    # Initialize a list to collect DataFrames
-    dataframes = []
-
-    # Use ProcessPoolExecutor for parallel processing
-    with ProcessPoolExecutor() as executor:
-        future_to_chunk = {}
-        for chunk in iter_microdata:
-            chunk = chunk[chunk['YEAR'] >= MIN_DATA_YEAR]  # Filter by year
-            if not chunk.empty:
-                future = executor.submit(process_data, chunk, swap_df)
-                future_to_chunk[future] = chunk
-
-        # Collect results as they are completed
-        for future in as_completed(future_to_chunk):
-            try:
-                processed_data = future.result()
-                if not processed_data.empty:
-                    dataframes.append(processed_data)
-            except Exception as e:
-                print(f"Error processing chunk: {e}")
-
-    # Concatenate all DataFrames into a single DataFrame
-    all_data = pd.concat(dataframes, ignore_index=True)
-
-    print("\nFinished processing CPS data")
-
-    # Save data
-    print("Flagging top 1% earners for each year...")
-    all_data = flag_top_1_percent(all_data)
-    filename = f'./data/cps_data/all_years.csv'
-    print("Saving CPS data...")
-    all_data.to_csv(filename, index=False)
-    print("Done!")
 
 
 if __name__ == "__main__":
