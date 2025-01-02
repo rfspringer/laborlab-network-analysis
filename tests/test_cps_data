@@ -1,0 +1,32 @@
+import pandas as pd
+from cps_loader import apply_filters
+
+df = pd.read_csv('./data/cps_data/all_years.csv')
+# filtered to match table A1 in the appendix of Hoffman 2020
+df = apply_filters(df, min_age=25, max_age=64)
+df = df[df['income_year'] <= 2018]
+
+
+def test_output_matches_replication_data():
+    df = pd.read_csv('./data/cps_data/all_years.csv')
+    # filtered to match table A1 in the appendix of Hoffman 2020
+    df = apply_filters(df, min_age=25, max_age=64)
+    df = df[df['income_year'] <= 2018]
+
+
+    ftfy_fraction = (df['is_full_time_full_year'] is True).mean()
+    assert round(ftfy_fraction, 3) == 0.518
+
+    women_mean_cap_income = df.loc[(df['SEX'] == 2), 'capital_income'].mean()
+    assert round(women_mean_cap_income, 3) == 0.515
+
+    #possible should be total_income instead of labor income, also check int rounding if off by one
+    men_average_earnings = df.loc[(df['SEX'] == 1), df['labor_income']].mean()
+    assert int(men_average_earnings) == 56716
+
+    #maybe should be total_income
+    average_ftfy_earnings = df.loc[(df['is_full_time_full_year'] is True), 'labor_income'].mean()
+    assert int(average_ftfy_earnings) == 66244
+    
+
+

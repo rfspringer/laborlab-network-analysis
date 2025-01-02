@@ -1,12 +1,8 @@
 import pytest
 import numpy as np
-import networkx as nx
-import utils
-import pickle
-from graph_analysis_from_net import *
 
-import network_sort
-from graph_analysis_from_net import *
+import network_utils
+from network_utils.gini_calculation_from_network import *
 
 @pytest.fixture
 def simple_test_graph():
@@ -70,7 +66,7 @@ def test_wealth_gini_directly_connected_split_by_income(simple_test_graph):
 
 
 def test_rank_correlation(simple_test_graph):
-    sorted_nodes = network_sort.sort(simple_test_graph)
+    sorted_nodes = network_utils.sort(simple_test_graph)
 
     # Sort nodes based on their 'wealth' attribute values
     wealths = nx.get_node_attributes(simple_test_graph, 'wealth')
