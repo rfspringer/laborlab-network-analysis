@@ -211,10 +211,11 @@ def flag_full_time_full_year(df):
 
 
 def add_state_x_industry(df):
+    df['stateXIND1990_singledigit'] = df['STATEFIP'].astype(str) + '-' + (df['IND1990'] // 100).astype(str)
     df['stateXIND1990'] = df['STATEFIP'].astype(str) + '-' + df['IND1990'].astype(str)
     df['stateXindustry_1950'] = df['STATEFIP'].astype(str) + '-' + df['IND1950'].astype(str)
     df['stateXindustry'] = df['STATEFIP'].astype(str) + '-' + df['IND'].astype(str)
-    df['divisionXindustry'] = df['REGION'].astype(str) + '-' + df['IND1950'].astype(str)
+    df['regionXIND1990'] = df['REGION'].astype(str) + '-' + df['IND1990'].astype(str)
     df['regionXindustry'] = df['REGION'].astype(str)[0] + '-' + df['IND'].astype(str)   #leftmost digit is region
     return df
 

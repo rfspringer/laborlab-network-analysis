@@ -26,7 +26,7 @@ class BaseCalculator(ABC):
 
     def get_years_to_process(self, min_year, max_year, run_from_existing_results):
         if run_from_existing_results:
-            print("Loading existing results from same filename")
+            print("Loading existing results from same filename (turn off if you're trying to rerun results for same file with load_existing_results=False)")
             results_dict = self.load_existing_results()
             if results_dict:
                 result_years = [int(year) for year in results_dict.keys()]
@@ -78,6 +78,7 @@ class BaseCalculator(ABC):
 
     def process_year(self, year, **kwargs):
         year, results = self.calculate_for_year(year, **kwargs)
+        #
         print(f"\n\nResults for {year}: {results}\n\n")
         return year, results
 
