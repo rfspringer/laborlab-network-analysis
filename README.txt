@@ -2,7 +2,7 @@
 
 ### **CPS**
 Contains tools for processing CPS data based on the replication process defined in Hoffman (2020).
-- `cps_loader.py` loads CPS data and processes it according to the replication process. Results are stored in the `Results` folder as samples by year and in `all_result.csv`.
+- `cps_loader.py` loads CPS data and processes it according to the replication process. Results are stored in the `Results` folder as samples by year and in `all_result.csv`. Before use, a the .xml codebook and .dat.gz data file need to be downloaded from the CPS website if you're trying to replicate anything!
 - `calculators_data_calculators` includes `BaseCalculator` for common filtering, processing, saving, and parallelization steps. `IncomeStatisticsCalculator` extends it to calculate yearly basic statistics, and `GiniCalculator` adds Gini and Gini component calculations.
 - `calculator_main.py` serves as the entry point to run calculators by specifying the desired calculator and parameters.
 - `input-output_analysis.ipynb` contains initial exploration into using OECD input-output tables with CPS calculations, though this area is not currently developed.
@@ -52,4 +52,4 @@ Includes tests to verify replication of processed CPS data with Hoffman (2020) a
 
 ### **Run Gini Calculations on NetworkX Graph(s)**
 (0. Load data into networkX graph. This can be done in a process similarly to how it was executed in `ipums_data_extraction.ipynb` and `ipums_graph_analysis.ipynb` for IPUMS data)
-1. Use `gini_from_netx.py`to calculate gini components. Beware for large datasets this can easily overwhelm memory :( this is why CPS stateXindustry calculations and other calculations that involve fully connected components should be run using matrices in the GiniCalculator class!
+1. Use `gini_from_netx.py`to calculate gini components. - Beware though that for large datasets this can easily overwhelm memory :( this is why CPS stateXindustry calculations and other calculations that involve fully connected components should be run using matrices in the GiniCalculator class!
