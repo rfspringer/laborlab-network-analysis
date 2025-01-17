@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 
 import network_utils
-from network_utils.gini_calculation_from_network import *
+from network_utils.gini_calculation_from_single_network import *
 
 @pytest.fixture
 def simple_test_graph():
@@ -74,7 +74,7 @@ def test_rank_correlation(simple_test_graph):
     ranks = {id_: rank for rank, id_ in enumerate(wealth_sorted_nodes, start=1)}
     print(ranks)
 
-    rho, list = utils.calculate_rank_correlation(sorted_nodes, ranks)
+    rho, list = network_utils.calculate_rank_correlation(sorted_nodes, ranks)
     print(sorted_nodes)
     print(wealth_sorted_nodes)
     print(list)

@@ -18,7 +18,8 @@ Includes code from past work for handling IPUMS data, forming state-by-industry 
 
 ### **Network Utils**
 Contains tools for network-based Gini calculations and sorting.
-- `gini_calculation_from_network.py` defines functions to calculate Gini coefficients for different subsets of node pairs in directed graphs based on wealth and income attributes.
+- `gini_from_netx.py` contains a class to calculate Gini component coefficients from networkX graphs. The Gini can be calculated either from a separated income and domination network or a single network with both attributes, with flexibly defined domination rules and attributes.
+- `gini_calculation_from_network.py` defines functions to calculate Gini coefficients for different subsets of node pairs in directed graphs based on wealth and income attributes. This contains a lot of functions from previous work calcualting the gini out of sets of directed edges rather than out of the whole graph, and is now generally less useful than gini_from_netx.py
 - `network_sort.py` processes and sorts directed graphs by collapsing strongly connected components into supernodes, then sorting supernodes and their nodes by topological order and net flow.
 
 ### **Results**
@@ -48,3 +49,7 @@ Includes tests to verify replication of processed CPS data with Hoffman (2020) a
 
 ### **Run Network Sorting**
 1. Use `network_sort.py` to process and sort directed graphs.
+
+### **Run Gini Calculations on NetworkX Graph(s)**
+(0. Load data into networkX graph. This can be done in a process similarly to how it was executed in `ipums_data_extraction.ipynb` and `ipums_graph_analysis.ipynb` for IPUMS data)
+1. Use `gini_from_netx.py`to calculate gini components. Beware for large datasets this can easily overwhelm memory :( this is why CPS stateXindustry calculations and other calculations that involve fully connected components should be run using matrices in the GiniCalculator class!

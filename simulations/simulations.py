@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import network_utils
 import simulation_utils as utils
 import pandas as pd
-from network_utils.gini_calculation_from_network import *
+from network_utils.gini_calculation_from_single_network import *
 
 
 class Simulation:

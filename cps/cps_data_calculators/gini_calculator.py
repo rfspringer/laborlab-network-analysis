@@ -1,10 +1,15 @@
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
 from .base_calculator import BaseCalculator
 
 
 class GiniCalculator(BaseCalculator):
+    def get_result_columns(self):
+        """Define the columns for Gini coefficient results."""
+        return ['Year', 'State', 'STATEFIP', 'exploitation', 'patronage',
+                'exclusion', 'rationing', 'component_sum', 'total_gini']
+
+
     def calculate_n_and_mean_labor_income(self, df, weights=None):
         """Calculate the effective sample size and weighted mean labor income."""
         if weights is not None:
@@ -145,37 +150,15 @@ class GiniCalculator(BaseCalculator):
             'total_gini': total_sum / denominator   # distinct from component sum because it includes pairwise relationships with no pairwise domination
         }
 
-    def calculate_for_year(self, year, min_age=None, max_age=None, filter_full_time_full_year=False,
-                           filter_top_1_percent=False, filter_ag_and_public_service=False,
-                           group_identifier='stateXindustry', use_weights=False, outer_tqdm=None):
+    def calculate_for(self, df, **kwargs):
         """Calculate results for a specific year with proper weight handling."""
-        year_df = pd.read_csv(f'../data/cps_data/{year}_sample.csv')
-        year_df = self.filter_df(
-            year_df, min_age, max_age, filter_full_time_full_year,
-            filter_top_1_percent, filter_ag_and_public_service
-        )
+        group_identifier = kwargs.get('group_identifier', 'stateXindustry')
+        use_weights = kwargs.get('use_weights', True)
+        outer_tqdm = kwargs.get('outer_tqdm', None)
 
-        # Ensure ASECWT exists if weights are requested
-        if use_weights and 'ASECWT' not in year_df.columns:
-            raise ValueError("Weight column 'ASECWT' not found in data")
+        gini_dict = self.calculate_ginis(df, group_identifier, use_weights, outer_tqdm)
+        return gini_dict
 
-        gini_dict = self.calculate_ginis(year_df, group_identifier, use_weights, outer_tqdm)
-        return year, gini_dict
-
-    # def calculate_for_states(self, year_df):
-    #     df =
-    #     states = set(year_df['STATEFIP'])
-    #     for state in states:
-    #         state_year_df = year_df[year_df['STATEFIP'] == state]
-    #         state_year_gini_dict = self.calculate_ginis(year_df, group_identifier, use_weights, outer_tqdm)
-    #
-    #     # NEW PLAN!!!!!
-    #     # prev calcualte_for_year should be calculate_for()
-    #     # calcualte_for_year() should be defined in base calculate to run individually filtered by filters and year
-    #     # and then if requested, loop through all unique STATEFIPs, filter df by that state run calcualte_for() on those,
-    #     # save to dataframe then CSV, with columns for STATE (translated back to a name through a dictionary) and STATEFIP just in case thats needed- which will be None if run on all, and YEAR and then the headers of the dict
-    #     # calcualte for year must filter and then run without state filter and then loop through for all state
-    #     # convert STATEFIP to name for rersults
 
 
 

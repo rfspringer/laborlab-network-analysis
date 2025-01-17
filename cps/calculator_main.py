@@ -6,7 +6,7 @@ def main():
     logging.basicConfig(level=logging.INFO)
 
     # Calculate Gini coefficients
-    gini_calc = GiniCalculator('../results/weighted_gini_components_by_stateXind1990_singledigit_18plus_1976plus.json')
+    gini_calc = GiniCalculator('../results/weighted_gini_components_by_stateXind1990_singledigit_18plus_1976plus.csv')
     gini_calc.calculate_all(
         load_existing_results=True,
         min_age=18,
@@ -14,10 +14,12 @@ def main():
         # filter_by_sex = MEN
         filter_ag_and_public_service=True,
         min_year=1976,
+        # max_year = 2023
         parallel=True,
         run_from_existing_file=True,
         use_weights=True,
-        group_identifier='stateXIND1990_singledigit'
+        group_identifier='stateXIND1990_singledigit',
+        calculate_by_states=True
     )
     # Current options for group identifier include:
     # stateXIND1990_singledigit (first digit of IND1990 variable)

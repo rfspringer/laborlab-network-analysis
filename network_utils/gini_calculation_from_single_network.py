@@ -2,12 +2,14 @@ import networkx as nx
 from itertools import combinations, product
 from tqdm import tqdm
 
-def get_wealth(node_data, wealth_attr):
-    wealth = node_data.get(wealth_attr, 0)
+# THIS FILE RETURNS THE GINI WITHIN SETS OF PAIRS (ex gini OF certain components)- mostly from previous work but kept the file in case it becomes useful
+
+def get_wealth(node_data, domination_attr):
+    wealth = node_data.get(domination_attr, 0)
     return wealth if wealth > 0 else 0.0001
 
-def get_mean_wealth_of_nodes(g, nodes, wealth_attr, verbose=False):
-    wealth_values = [get_wealth(g.nodes[n], wealth_attr) for n in nodes]
+def get_mean_wealth_of_nodes(g, nodes, domination_attr, verbose=False):
+    wealth_values = [get_wealth(g.nodes[n], domination_attr) for n in nodes]
     if wealth_values:
         mean_wealth = sum(wealth_values) / len(wealth_values)
         if verbose:
@@ -63,38 +65,38 @@ def get_not_directly_connected_pairs(g: nx.DiGraph, verbose=False):
         print(f"Not directly connected pairs: {len(not_directly_connected_pairs)}")
     return not_directly_connected_pairs
 
-def get_directly_connected_pairs_by_wealth_and_income(g: nx.DiGraph, wealth_attr='wealth', income_attr='income', verbose=False):
-    higher_wealth_higher_income = []
-    higher_wealth_lower_income = []
+def get_directly_connected_pairs_by_domination_and_income(g: nx.DiGraph, domination_attr='wealth', income_attr='income', verbose=False):
+    dominating_node_higher_income = []
+    dominating_node_lower_income = []
 
     for u, v in g.edges():
-        wealth_u = g.nodes[u].get(wealth_attr, 0)
-        wealth_v = g.nodes[v].get(wealth_attr, 0)
+        wealth_u = g.nodes[u].get(domination_attr, 0)
+        wealth_v = g.nodes[v].get(domination_attr, 0)
         income_u = g.nodes[u].get(income_attr, 0)
         income_v = g.nodes[v].get(income_attr, 0)
 
         if (wealth_u > wealth_v and income_u >= income_v) or (wealth_v > wealth_u and income_v >= income_u):
-            higher_wealth_higher_income.append((u, v))
+            dominating_node_higher_income.append((u, v))
         else:
-            higher_wealth_lower_income.append((u, v))
+            dominating_node_lower_income.append((u, v))
 
     if verbose:
-        print(f"Higher wealth, higher income pairs: {len(higher_wealth_higher_income)}")
-        print(f"Higher wealth, lower income pairs: {len(higher_wealth_lower_income)}")
+        print(f"Dominating node, higher income pairs: {len(dominating_node_higher_income)}")
+        print(f"Dominating node, lower income pairs: {len(dominating_node_lower_income)}")
 
-    return higher_wealth_higher_income, higher_wealth_lower_income
+    return dominating_node_higher_income, dominating_node_lower_income
 
-def wealth_gini_from_pairs(g: nx.DiGraph, pairs, wealth_attr='wealth', verbose=False) -> float:
+def wealth_gini_from_pairs(g: nx.DiGraph, pairs, domination_attr='wealth', verbose=False) -> float:
     total_diff = 0.0
-    wealth_sum = 0.0
+    wealth_sum = 0.0    # could be other other dominating feature
     total_pairs = len(pairs)
 
     if total_pairs == 0:
         return None
 
     for u, v in tqdm(pairs, total=total_pairs, desc="Processing node pairs", disable=not verbose):
-        wealth_u = get_wealth(g.nodes[u], wealth_attr)
-        wealth_v = get_wealth(g.nodes[v], wealth_attr)
+        wealth_u = get_wealth(g.nodes[u], domination_attr)
+        wealth_v = get_wealth(g.nodes[v], domination_attr)
         total_diff += abs(wealth_u - wealth_v)
         wealth_sum += (wealth_u + wealth_v)
 
@@ -106,57 +108,57 @@ def wealth_gini_from_pairs(g: nx.DiGraph, pairs, wealth_attr='wealth', verbose=F
 
     return gini
 
-def wealth_gini_all_nodes(g: nx.DiGraph, wealth_attr='wealth', verbose=False) -> float:
+def wealth_gini_all_nodes(g: nx.DiGraph, domination_attr='wealth', verbose=False) -> float:
     if verbose:
         print("Calculating gini for all nodes...")
     pairs = get_all_pairs(g, verbose=verbose)
-    gini = wealth_gini_from_pairs(g, pairs, wealth_attr, verbose=verbose)
+    gini = wealth_gini_from_pairs(g, pairs, domination_attr, verbose=verbose)
     if verbose:
         print(f"Gini coefficient for all node pairs: {gini}")
     return gini
 
-def wealth_gini_weakly_connected(g: nx.DiGraph, wealth_attr='wealth', verbose=False) -> float:
+def wealth_gini_weakly_connected(g: nx.DiGraph, domination_attr='wealth', verbose=False) -> float:
     if verbose:
         print("Calculating gini for weakly connected nodes...")
     pairs = get_weakly_connected_pairs(g, verbose=verbose)
-    gini = wealth_gini_from_pairs(g, pairs, wealth_attr, verbose=verbose)
+    gini = wealth_gini_from_pairs(g, pairs, domination_attr, verbose=verbose)
     if verbose:
         print(f"Gini coefficient for weakly connected node pairs: {gini}")
     return gini
 
-def wealth_gini_not_weakly_connected(g: nx.DiGraph, wealth_attr='wealth', verbose=False) -> float:
+def wealth_gini_not_weakly_connected(g: nx.DiGraph, domination_attr='wealth', verbose=False) -> float:
     if verbose:
         print("Calculating gini for not weakly connected nodes...")
     pairs = get_not_weakly_connected_pairs(g, verbose=verbose)
-    gini = wealth_gini_from_pairs(g, pairs, wealth_attr, verbose=verbose)
+    gini = wealth_gini_from_pairs(g, pairs, domination_attr, verbose=verbose)
     if verbose:
         print(f"Gini coefficient for not weakly connected node pairs: {gini}")
     return gini
 
-def wealth_gini_directly_connected(g: nx.DiGraph, wealth_attr='wealth', verbose=False) -> float:
+def wealth_gini_directly_connected(g: nx.DiGraph, domination_attr='wealth', verbose=False) -> float:
     if verbose:
         print("Calculating gini for directly connected nodes...")
     pairs = get_directly_connected_pairs(g, verbose=verbose)
-    gini = wealth_gini_from_pairs(g, pairs, wealth_attr, verbose=verbose)
+    gini = wealth_gini_from_pairs(g, pairs, domination_attr, verbose=verbose)
     if verbose:
         print(f"Gini coefficient for directly connected node pairs: {gini}")
     return gini
 
-def wealth_gini_not_directly_connected(g: nx.DiGraph, wealth_attr='wealth', verbose=False) -> float:
+def wealth_gini_not_directly_connected(g: nx.DiGraph, domination_attr='wealth', verbose=False) -> float:
     if verbose:
         print("Calculating gini for not directly connected nodes...")
     pairs = get_not_directly_connected_pairs(g, verbose=verbose)
-    gini = wealth_gini_from_pairs(g, pairs, wealth_attr, verbose=verbose)
+    gini = wealth_gini_from_pairs(g, pairs, domination_attr, verbose=verbose)
     if verbose:
         print(f"Gini coefficient for not directly connected node pairs: {gini}")
     return gini
 
-def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph, wealth_attr='wealth', income_attr='income', verbose=False) -> (float, float):
+def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph, domination_attr='wealth', income_attr='income', verbose=False) -> (float, float):
     if verbose:
         print("Calculating Gini for directly connected node pairs split by income...", flush=True)
-    higher_income_pairs, lower_income_pairs = get_directly_connected_pairs_by_wealth_and_income(g, wealth_attr, income_attr, verbose=verbose)
-    higher_income_gini = wealth_gini_from_pairs(g, higher_income_pairs, wealth_attr, verbose=verbose)
-    lower_income_gini = wealth_gini_from_pairs(g, lower_income_pairs, wealth_attr, verbose=verbose)
+    higher_income_pairs, lower_income_pairs = get_directly_connected_pairs_by_domination_and_income(g, domination_attr, income_attr, verbose=verbose)
+    higher_income_gini = wealth_gini_from_pairs(g, higher_income_pairs, domination_attr, verbose=verbose)
+    lower_income_gini = wealth_gini_from_pairs(g, lower_income_pairs, domination_attr, verbose=verbose)
 
     if verbose:
         print(f"Gini coefficient for wealthier-higher-income pairs: {higher_income_gini}")
@@ -164,12 +166,12 @@ def wealth_gini_directly_connected_split_by_income(g: nx.DiGraph, wealth_attr='w
 
     return higher_income_gini, lower_income_gini
 
-def calculate_all_ginis(g: nx.DiGraph, wealth_attr='wealth', income_attr='income', verbose=False):
+def calculate_all_ginis(g: nx.DiGraph, domination_attr='wealth', income_attr='income', verbose=False):
     ginis = {
-        "all_nodes": wealth_gini_all_nodes(g, wealth_attr, verbose=verbose),
-        "weakly_connected_only": wealth_gini_weakly_connected(g, wealth_attr, verbose=verbose),
-        "not_weakly_connected_only": wealth_gini_not_weakly_connected(g, wealth_attr, verbose=verbose),
-        "not_directly_connected": wealth_gini_not_directly_connected(g, wealth_attr, verbose=verbose),
-        "directly_connected_split_by_income": wealth_gini_directly_connected_split_by_income(g, wealth_attr, income_attr, verbose=verbose)
+        "all_nodes": wealth_gini_all_nodes(g, domination_attr, verbose=verbose),
+        "weakly_connected_only": wealth_gini_weakly_connected(g, domination_attr, verbose=verbose),
+        "not_weakly_connected_only": wealth_gini_not_weakly_connected(g, domination_attr, verbose=verbose),
+        "not_directly_connected": wealth_gini_not_directly_connected(g, domination_attr, verbose=verbose),
+        "directly_connected_split_by_income": wealth_gini_directly_connected_split_by_income(g, domination_attr, income_attr, verbose=verbose)
     }
     return ginis
