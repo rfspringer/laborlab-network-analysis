@@ -1,10 +1,15 @@
 import numpy as np
-import pandas as pd
 from tqdm import tqdm
 from .base_calculator import BaseCalculator
 
 
 class GiniCalculator(BaseCalculator):
+    def get_result_columns(self):
+        """Define the columns for Gini coefficient results."""
+        return ['Year', 'State', 'STATEFIP', 'exploitation', 'patronage',
+                'exclusion', 'rationing', 'component_sum', 'total_gini']
+
+
     def calculate_n_and_mean_labor_income(self, df, weights=None):
         """Calculate the effective sample size and weighted mean labor income."""
         if weights is not None:
@@ -25,12 +30,12 @@ class GiniCalculator(BaseCalculator):
         """
         total_weight, mean_labor_income = self.calculate_n_and_mean_labor_income(df, weights)
 
-        # The denominator should be 2 * (sum of weights)^2 * mean income
         return 2 * total_weight ** 2 * mean_labor_income
 
     def calculate_exploitation_and_patronage_sums(self, df, group_identifier, weights=None, outer_tqdm=None):
         exploitation_sum = 0.
         patronage_sum = 0.
+        all_pairs_sum = 0.
 
         grouped = df.groupby(group_identifier)
         total_groups = len(grouped)
@@ -49,7 +54,6 @@ class GiniCalculator(BaseCalculator):
                 domination_mask = capital_diff_matrix != 0
                 higher_capital_higher_labor = (labor_diff_matrix * capital_diff_matrix > 0)
 
-                # Use survey weights directly without additional normalization
                 weight_matrix = np.outer(group_weights, group_weights)
 
                 exploitation_mask = domination_mask & higher_capital_higher_labor
@@ -62,13 +66,18 @@ class GiniCalculator(BaseCalculator):
                     np.abs(labor_diff_matrix[patronage_mask]) * weight_matrix[patronage_mask]
                 )
 
+                all_pairs_sum += np.sum(
+                    np.abs(labor_diff_matrix) * weight_matrix
+                )
+
                 pbar.update(1)
 
-        return exploitation_sum, patronage_sum
+        return exploitation_sum, patronage_sum, all_pairs_sum
 
     def calculate_exclusion_and_rationing_sums(self, df, group_identifier, weights=None, outer_tqdm=None):
         exclusion_sum = 0.
         rationing_sum = 0.
+        all_pairs_sum = 0.
 
         grouped = df.groupby(group_identifier)
         group_data = [
@@ -91,7 +100,7 @@ class GiniCalculator(BaseCalculator):
                     domination_mask = capital_diff != 0
                     higher_capital_higher_labor = (labor_diff * capital_diff > 0)
 
-                    # Use survey weights directly without normalization
+                    # Use survey weights
                     weight_matrix = np.outer(group1_weights, group2_weights)
 
                     exclusion_mask = domination_mask & higher_capital_higher_labor
@@ -104,9 +113,14 @@ class GiniCalculator(BaseCalculator):
                         np.abs(labor_diff[rationing_mask]) * weight_matrix[rationing_mask]
                     )
 
+                    all_pairs_sum += np.sum(
+                        np.abs(labor_diff) * weight_matrix
+                    )
+
                     pbar.update(1)
 
-        return exclusion_sum * 2, rationing_sum * 2
+        # results * 2 for this function because we are only comparing each pair once for efficiency
+        return exclusion_sum * 2, rationing_sum * 2, all_pairs_sum * 2
 
     def calculate_ginis(self, df, group_identifier, use_weights=False, outer_tqdm=None):
         """Calculate Gini coefficients with proper weight handling."""
@@ -117,10 +131,11 @@ class GiniCalculator(BaseCalculator):
         denominator = self.calculate_gini_denominator(df, weights)
 
         # Calculate the numerator sums for exploitation, patronage, exclusion, and rationing
-        exploitation_sum, patronage_sum = self.calculate_exploitation_and_patronage_sums(
+        exploitation_sum, patronage_sum, pairs_sum_1 = self.calculate_exploitation_and_patronage_sums(
             df, group_identifier, weights, outer_tqdm)
-        exclusion_sum, rationing_sum = self.calculate_exclusion_and_rationing_sums(
+        exclusion_sum, rationing_sum, pairs_sum_2 = self.calculate_exclusion_and_rationing_sums(
             df, group_identifier, weights, outer_tqdm)
+        total_sum = pairs_sum_1 + pairs_sum_2
 
         if denominator == 0:
             raise ValueError("Denominator for Gini calculation is zero. Check the input data.")
@@ -131,22 +146,19 @@ class GiniCalculator(BaseCalculator):
             'patronage': patronage_sum / denominator,
             'exclusion': exclusion_sum / denominator,
             'rationing': rationing_sum / denominator,
-            'total': (exploitation_sum + patronage_sum + exclusion_sum + rationing_sum) / denominator
+            'component_sum': (exploitation_sum + patronage_sum + exclusion_sum + rationing_sum) / denominator,
+            'total_gini': total_sum / denominator   # distinct from component sum because it includes pairwise relationships with no pairwise domination
         }
 
-    def calculate_for_year(self, year, min_age=None, max_age=None, filter_full_time_full_year=False,
-                           filter_top_1_percent=False, filter_ag_and_public_service=False,
-                           group_identifier='stateXindustry', use_weights=False, outer_tqdm=None):
+    def calculate_for(self, df, **kwargs):
         """Calculate results for a specific year with proper weight handling."""
-        year_df = pd.read_csv(f'./data/cps_data/{year}_sample.csv')
-        year_df = self.filter_df(
-            year_df, min_age, max_age, filter_full_time_full_year,
-            filter_top_1_percent, filter_ag_and_public_service
-        )
+        group_identifier = kwargs.get('group_identifier', 'stateXindustry')
+        use_weights = kwargs.get('use_weights', True)
+        outer_tqdm = kwargs.get('outer_tqdm', None)
 
-        # Ensure ASECWT exists if weights are requested
-        if use_weights and 'ASECWT' not in year_df.columns:
-            raise ValueError("Weight column 'ASECWT' not found in data")
+        gini_dict = self.calculate_ginis(df, group_identifier, use_weights, outer_tqdm)
+        return gini_dict
 
-        gini_dict = self.calculate_ginis(year_df, group_identifier, use_weights, outer_tqdm)
-        return year, gini_dict
+
+
+

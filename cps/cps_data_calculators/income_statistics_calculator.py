@@ -127,14 +127,27 @@ class IncomeStatisticsCalculator(BaseCalculator):
 
         return stats
 
-    def calculate_for_year(self, year, min_age=None, max_age=None, filter_full_time_full_year=False,
-                           filter_top_1_percent=False, filter_ag_and_public_service=False):
-        year_df = pd.read_csv(f'./data/cps_data/{year}_sample.csv')
-        year_df = self.filter_df(
-            year_df, min_age, max_age, filter_full_time_full_year,
-            filter_top_1_percent, filter_ag_and_public_service
-        )
+    def get_result_columns(self):
+        """Define the columns for income statistics results."""
+        base_metrics = ['std_log_labor', 'std_log_total', 'var_log_labor', 'var_log_total',
+                        'mean_log_labor', 'mean_log_total', 'min_log_labor', 'median_log_labor',
+                        'max_log_labor', 'min_log_total', 'median_log_total', 'max_log_total']
 
-        stats = self.calculate_statistics(year_df)
-        stats.update(self.calculate_gender_statistics(year_df))
-        return year, stats
+        # Add unweighted versions
+        unweighted = [f'unweighted_{metric}' for metric in base_metrics]
+
+        # Add gender-specific versions
+        gender_metrics = []
+        for gender in ['men', 'women']:
+            gender_metrics.extend([f'{gender}_{metric}' for metric in base_metrics])
+            gender_metrics.extend([f'unweighted_{gender}_{metric}' for metric in base_metrics])
+
+        # Combine all columns
+        return ['Year', 'State', 'STATEFIP'] + base_metrics + unweighted + gender_metrics
+
+
+    def calculate_for(self, df, **kwargs):
+        stats = self.calculate_statistics(df)
+        stats.update(self.calculate_gender_statistics(df))
+        return stats
+
