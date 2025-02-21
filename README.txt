@@ -38,7 +38,7 @@ Includes tests to verify replication of processed CPS data with Hoffman (2020) a
 
 ## Usage Instructions
 
-### **Run Gini Calculations on CPS Data**
+### **Run Decomposed Gini Calculations on CPS Data**
 1. Use `cps_loader.py` to process CPS data.
 2. Run `main_calculator.py` and specify `GiniCalculator` to calculate Gini metrics for each year.
 3. Visualize results using `gini_visualizations.ipynb` (includes debugging graphs for income statistics).
